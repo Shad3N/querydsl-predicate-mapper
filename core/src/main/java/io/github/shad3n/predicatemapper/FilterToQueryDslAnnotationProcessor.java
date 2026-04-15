@@ -26,7 +26,7 @@ import java.util.Set;
 @SupportedAnnotationTypes("io.github.shad3n.predicatemapper.annotation.PredicateMapper")
 public class FilterToQueryDslAnnotationProcessor extends AbstractProcessor {
 
-    // We need to deffer until other processors have completed
+    // We need to defer until other processors have completed
     // to have access to Q-classes of QueryDSL
     private final Set<TypeElement> deferredElements = new LinkedHashSet<>();
 

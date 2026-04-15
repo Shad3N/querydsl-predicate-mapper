@@ -108,7 +108,7 @@ class FilterImplementationGenerator {
                                                      .addParameter(m.dtoClass(), "dto");
 
         String qClassName = m.qClass().simpleName();
-        String variableName = qClassName.startsWith("Q") ?
+        String variableName = qClassName.startsWith("Q") && qClassName.length() > 1 ?
                 Character.toLowerCase(qClassName.charAt(1)) + qClassName.substring(2) : "entity";
         methodBuilder.addStatement("$T q = new $T($S)", m.qClass(), m.qClass(), variableName);
         methodBuilder.addStatement("$T builder = new $T()", booleanBuilderName, booleanBuilderName);

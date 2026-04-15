@@ -45,6 +45,9 @@ class MethodMappingProcessor {
         }
 
         TypeElement qClassElement = extractQClassElement(method);
+        if (qClassElement == null) {
+            return java.util.Optional.empty();
+        }
 
         List<FieldMapping> fieldMappings = collectMappings(dtoElement, qClassElement);
         if (fieldMappings == null) {
@@ -81,8 +84,8 @@ class MethodMappingProcessor {
      * Extracts and validates the QueryDSL Q-class element from the method's annotation.
      *
      * @param method the method element
-     * @return the Q-class type element
-     * @throws DeferRoundException if the Q-class is not yet available
+     * @return the Q-class type element, or null if it is a real error (not a deferral)
+     * @throws DeferRoundException if the Q-class is not yet available (unresolved type)
      */
     private TypeElement extractQClassElement(ExecutableElement method) {
         TypeMirror qClassMirror = getQClassMirror(method);
@@ -91,7 +94,7 @@ class MethodMappingProcessor {
         }
         if (qClassMirror.getKind() != TypeKind.DECLARED) {
             error(ProcessorErrorMessageFactory.buildCannotResolveQClassMessage(), method);
-            throw new DeferRoundException();
+            return null;
         }
         return MoreTypes.asTypeElement(qClassMirror);
     }
@@ -103,8 +106,8 @@ class MethodMappingProcessor {
      * @return the type mirror, or null if invalid or unresolved
      */
     private TypeMirror getQClassMirror(ExecutableElement method) {
-        com.google.common.base.Optional<AnnotationMirror> annotationMirror =
-                MoreElements.getAnnotationMirror(method, ToPredicate.class);
+        java.util.Optional<AnnotationMirror> annotationMirror =
+                MoreElements.getAnnotationMirror(method, ToPredicate.class).toJavaUtil();
         if (!annotationMirror.isPresent()) {
             return null;
         }
@@ -170,7 +173,36 @@ class MethodMappingProcessor {
             return null;
         }
 
-        return new FieldMapping(dtoField.getSimpleName().toString(), path, operation);
+        return new FieldMapping(dtoField.getSimpleName().toString(), path, operation,
+                                resolveGetter(dtoField, dtoElement));
+    }
+
+    /**
+     * Resolves the getter expression for a DTO field. Tries {@code get*} first, then {@code is*}.
+     *
+     * @param dtoField   the DTO field element
+     * @param dtoElement the DTO type element
+     * @return the getter expression (e.g., {@code "dto.getName()"})
+     */
+    private String resolveGetter(VariableElement dtoField, TypeElement dtoElement) {
+        String fieldName = dtoField.getSimpleName().toString();
+        String capitalized = Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
+        String getGetter = "get" + capitalized;
+        String isGetter = "is" + capitalized;
+
+        boolean hasGetGetter = processingEnv.getElementUtils().getAllMembers(dtoElement).stream()
+                                            .anyMatch(e -> e.getKind() == ElementKind.METHOD
+                                                    && e.getSimpleName().contentEquals(getGetter)
+                                                    && ((ExecutableElement) e).getParameters().isEmpty());
+        if (hasGetGetter) {
+            return "dto." + getGetter + "()";
+        }
+
+        boolean hasIsGetter = processingEnv.getElementUtils().getAllMembers(dtoElement).stream()
+                                           .anyMatch(e -> e.getKind() == ElementKind.METHOD
+                                                   && e.getSimpleName().contentEquals(isGetter)
+                                                   && ((ExecutableElement) e).getParameters().isEmpty());
+        return "dto." + (hasIsGetter ? isGetter : getGetter) + "()";
     }
 
     /**
