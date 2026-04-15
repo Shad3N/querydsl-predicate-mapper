@@ -502,7 +502,7 @@ repository.findAll(userPredicate, securityPredicate, notDeletedPredicate);
 ## Building
 
 ```bash
-mvn clean install
+mvn clean install -pl core
 ```
 
 ---

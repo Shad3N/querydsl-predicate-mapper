@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.github.shad3n</groupId>
         <artifactId>querydsl-predicate-mapper-examples</artifactId>
-        <version>0.0.1</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>querydsl-predicate-mapper-examples-shared</artifactId>

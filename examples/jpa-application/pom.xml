@@ -7,11 +7,11 @@
     <parent>
         <groupId>io.github.shad3n</groupId>
         <artifactId>querydsl-predicate-mapper-examples</artifactId>
-        <version>0.0.1</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>querydsl-predicate-mapper-examples-jpa-application</artifactId>
-    <name>QueryDSL Predicate Mapper Examples - JPA Application</name>
+    <name>JPA application example</name>
     <description>Receiver service with JPA entities and predicate mapping</description>
 
     <dependencies>
