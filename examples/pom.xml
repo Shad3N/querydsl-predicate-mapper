@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xmlns="http://maven.apache.org/POM/4.0.0"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.shad3n</groupId>
+        <artifactId>querydsl-predicate-mapper-parent</artifactId>
+        <version>0.0.1</version>
+    </parent>
+
+    <artifactId>querydsl-predicate-mapper-examples</artifactId>
+    <packaging>pom</packaging>
+    <name>QueryDSL Predicate Mapper Examples</name>
+    <description>Example usage scenarios - not published</description>
+
+    <properties>
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <maven.install.skip>true</maven.install.skip>
+        <maven.javadoc.skip>true</maven.javadoc.skip>
+    </properties>
+
+    <modules>
+        <module>shared</module>
+        <module>jpa-application</module>
+        <module>no-jpa-application</module>
+        <module>query-sender</module>
+    </modules>
+</project>
