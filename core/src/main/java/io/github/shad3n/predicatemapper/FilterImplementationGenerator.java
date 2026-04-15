@@ -131,8 +131,7 @@ class FilterImplementationGenerator {
      * @param fieldMapping  the field mapping that describes the operation and target path
      */
     private void generateFieldCondition(MethodSpec.Builder methodBuilder, FieldMapping fieldMapping) {
-        String dtoFieldName = fieldMapping.dtoFieldName();
-        String getter = "dto.get" + capitalize(dtoFieldName) + "()";
+        String getter = fieldMapping.getter();
         String qPath = "q." + fieldMapping.path();
 
         if (fieldMapping.op() == Op.IS_NULL) {
@@ -151,21 +150,12 @@ class FilterImplementationGenerator {
                 case GTE -> qPath + ".goe(" + getter + ")";
                 case LIKE -> qPath + ".like(" + getter + ")";
                 case IN -> qPath + ".in(" + getter + ")";
-                default -> throw new IllegalStateException("Unhandled op: " + fieldMapping.op());
+                case IS_NULL, IS_NOT_NULL -> throw new IllegalStateException(
+                        "IS_NULL/IS_NOT_NULL must be handled before this switch: " + fieldMapping.op());
             };
             methodBuilder.beginControlFlow("if ($L != null)", getter)
                          .addStatement("builder.and($L)", expr)
                          .endControlFlow();
         }
-    }
-
-    /**
-     * Capitalizes the first letter of the given string.
-     *
-     * @param s the string to capitalize
-     * @return the capitalized string, or the original string if empty
-     */
-    private String capitalize(String s) {
-        return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 }

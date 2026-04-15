@@ -114,7 +114,9 @@ class TypeCompatibilityChecker {
      */
     private boolean isSubtypeOfCollection(TypeMirror type) {
         TypeMirror collectionType = processingEnv.getElementUtils().getTypeElement(Collection.class.getName()).asType();
-        return processingEnv.getTypeUtils().isSubtype(type, collectionType);
+        return processingEnv.getTypeUtils().isSubtype(
+                processingEnv.getTypeUtils().erasure(type),
+                processingEnv.getTypeUtils().erasure(collectionType));
     }
 
     /**
