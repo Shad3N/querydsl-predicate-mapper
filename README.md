@@ -12,25 +12,27 @@
 
 ## The Problem
 
-You have two Java microservices communicating via HTTP. The sender needs to query data from the receiver with flexible filters. You want:
+You need flexible, type-safe filtering on your QueryDSL-backed endpoints — whether that's an internal microservice
+boundary or a public-facing REST API. You want:
 
-- **Versatile query APIs** - let the sender define what to filter on
-- **Full type safety** - both services validated at compile time
-- **No drift** - sender and receiver stay in sync
+- **Versatile query APIs** - let callers define what to filter on without exposing your entity internals
+- **Compile-time safety** - Q-class paths validated during compilation, not discovered in production
+- **Explicit filter contracts** - callers see exactly which fields and operators are available
+- **No drift** - filter definitions stay in sync with your data model
 
 But you will most likely struggle with:
 
-- **Runtime failures** from typos in Q-class paths - silent ignores, wrong results, no exceptions
-- **Manual wiring** of every field to its predicate operation
+- **Runtime failures** from typos in Q-class paths - wrong results, no exceptions
+- **Manual wiring** of every field to its predicate operation - code bloat
 - **No compile-time safety** when Q-class paths change or fields are renamed
-- **Drift between services** - sender and receiver out of sync until production breaks
 
 ## The Solution
 
-QueryDSL Predicate Mapper uses **Annotation Processing (APT)** to generate predicate implementations at compile time. Define your filter object once in a shared library, and both services get full type safety:
+QueryDSL Predicate Mapper uses **Annotation Processing (APT)** to generate predicate implementations at compile time.
+Define a filter DTO with `@FilterField` annotations, and the APT generates the predicate wiring — validated against your
+Q-class at compile time:
 
 ```java
-// Shared library - used by both sender and receiver
 public class UserFilter {
     
     @FilterField(path = "name", op = Op.LIKE)
@@ -41,17 +43,6 @@ public class UserFilter {
     
     // Getters and setters...
 }
-```
-
-**Sender** populates the filter and serializes to query parameters:
-
-```java
-UserFilter filter = new UserFilter();
-filter.setName("john");
-filter.setStatuses(List.of(Status.ACTIVE, Status.PENDING));
-
-// Feign client or RestTemplate - filter becomes ?name=john&statuses=ACTIVE,PENDING
-response = userClient.searchUsers(filter);
 ```
 
 **Receiver** deserializes and converts to a QueryDSL predicate:
@@ -66,11 +57,21 @@ public List<User> search(@ModelAttribute UserFilter filter) {
 
 **If a Q-class path doesn't exist → compilation fails. No silent ignores. No runtime surprises.**
 
+The filter DTO doubles as an explicit contract — it clearly defines which fields are filterable and with which
+operators. This makes it a natural fit for Swagger/OpenAPI documentation: the DTO is referenced directly in your
+endpoint spec, so API consumers know exactly what they can query.
+
 ---
 
-## Microservices Architecture
+## Use Cases
 
-The primary use case: **type-safe queries across service boundaries**.
+### Inter-Microservice Communication
+
+The classic use case: **type-safe queries across service boundaries**.
+
+Both services share a filter DTO library. The sender populates the filter and serializes it as query parameters; the
+receiver deserializes it and converts to a QueryDSL predicate. The shared DTO contract ensures both sides stay in sync —
+and the APT validates that every `@FilterField` path actually exists on the Q-class.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -78,9 +79,9 @@ The primary use case: **type-safe queries across service boundaries**.
 │                                                                             │
 │   UserFilter {                    @FilterField annotations define:          │
 │     @FilterField(path="name")      - Which Q-class path to use              │
-|     @FilterField(path="status")    - Which operator to apply                │
-|     @FilterField(path="age")       - Compile-time validation                │
-|   }                                                                         │
+│     @FilterField(path="status")    - Which operator to apply                │
+│     @FilterField(path="age")       - Compile-time validation                │
+│   }                                                                         │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
                     │                                    │
@@ -101,42 +102,40 @@ The primary use case: **type-safe queries across service boundaries**.
 └────────────────────────────────┘    └────────────────────────────────────────┘
 ```
 
-### Why This Matters
+The shared library contains:
 
-**Without Predicate Mapper:**
-- Sender sends `?name=john&statu=ACTIVE` (typo)
-- Receiver silently ignores unknown parameter
-- Query returns unexpected results
-- Bug discovered in production
+- Filter DTOs with `@FilterField` annotations
+- `Op` enum for operators
+- `@PredicateMapper` and `@ToPredicate` annotations
 
-**With Predicate Mapper:**
-- `@FilterField(path = "status", op = Op.IN)` on the filter
-- APT validates `status` exists on `QUser` at compile time
-- If you rename the entity field, compilation fails
-- Both services guaranteed to stay in sync
+**Q-classes stay private** to the receiver service — they never leak into the shared library.
 
-### Shared Library Structure
+### Public-Facing API Filtering
+
+The same pattern works for public REST APIs. The filter DTO explicitly defines which fields are filterable and with
+which operators — no need to expose your entity internals. This pairs naturally with **Swagger/OpenAPI**: the filter DTO
+is referenced directly in your endpoint documentation, so API consumers see exactly what they can query.
 
 ```java
-// shared-library/src/main/java/com/example/filter/UserFilter.java
-public class UserFilter {
+// The filter DTO IS your API contract
+public class ProductFilter {
     
     @FilterField(path = "name", op = Op.LIKE)
     private String name;
-    
-    @FilterField(path = "email", op = Op.EQ)
-    private String email;
+
+    @FilterField(path = "category.name", op = Op.EQ)
+    private String category;
+
+    @FilterField(path = "price", op = Op.GTE)
+    private BigDecimal minPrice;
+
+    @FilterField(path = "price", op = Op.LTE)
+    private BigDecimal maxPrice;
     
     @FilterField(path = "status", op = Op.IN)
-    private List<Status> statuses;
-    
-    @FilterField(path = "createdAt", op = Op.GTE)
-    private LocalDate createdAfter;
-    
-    @FilterField(path = "createdAt", op = Op.LTE)
-    private LocalDate createdBefore;
-    
-    // Non-filtered fields (pagination, etc.) - no annotation
+    private List<ProductStatus> statuses;
+
+    // Non-filtered fields (pagination, sorting) - no @FilterField
     private Integer page;
     private Integer size;
     
@@ -144,12 +143,25 @@ public class UserFilter {
 }
 ```
 
-The shared library contains:
-- Filter DTOs with `@FilterField` annotations
-- `Op` enum for operators
-- `@PredicateMapper` and `@ToPredicate` annotations
+```java
 
-**Q-classes stay private** to the receiver service - they never leak into the shared library.
+@RestController
+@RequestMapping("/api/products")
+public class ProductController {
+
+    @GetMapping
+    public Page<Product> search(@ModelAttribute ProductFilter filter, Pageable pageable) {
+        return productService.search(filter, pageable);
+    }
+}
+```
+
+With Springdoc (Swagger/OpenAPI), the `ProductFilter` appears in the endpoint docs automatically — consumers know
+exactly which query parameters are available and what types they accept.
+
+> **Note:** Spring's `@ModelAttribute` silently ignores unknown query parameters. A custom `WebMvcConfigurer` for strict
+> query parameter validation is planned as a future feature — it will reject requests with unrecognized parameters instead
+> of silently ignoring them.
 
 ---
 
@@ -160,6 +172,7 @@ The shared library contains:
 - **Zero runtime reflection** - Generated code is plain, readable Java
 - **Multiple operators** - `EQ`, `NOT_EQ`, `LTE`, `GTE`, `LIKE`, `IN`, `IS_NULL`, `IS_NOT_NULL`
 - **Nested path support** - Traverse Q-class relationships: `"category.name"`, `"address.city"`
+- **Swagger/OpenAPI friendly** - Filter DTOs serve as documented query parameter contracts
 - **Spring integration** - Generated implementations are `@Component` beans
 - **Predicate composition** - Combine multiple predicates with standard QueryDSL operators
 
@@ -502,7 +515,7 @@ repository.findAll(userPredicate, securityPredicate, notDeletedPredicate);
 ## Building
 
 ```bash
-mvn clean install
+mvn clean install -pl core
 ```
 
 ---
