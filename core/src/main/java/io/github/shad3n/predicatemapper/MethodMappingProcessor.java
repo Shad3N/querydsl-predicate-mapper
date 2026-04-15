@@ -174,17 +174,23 @@ class MethodMappingProcessor {
         }
 
         return new FieldMapping(dtoField.getSimpleName().toString(), path, operation,
-                                resolveGetter(dtoField, dtoElement));
+                                resolveGetter(filterField, dtoField, dtoElement));
     }
 
     /**
-     * Resolves the getter expression for a DTO field. Tries {@code get*} first, then {@code is*}.
+     * Resolves the getter expression for a DTO field.
+     * Uses {@code FilterField.getter()} override if set; otherwise tries {@code get*} then {@code is*}.
      *
-     * @param dtoField   the DTO field element
-     * @param dtoElement the DTO type element
+     * @param filterField the annotation on the DTO field
+     * @param dtoField    the DTO field element
+     * @param dtoElement  the DTO type element
      * @return the getter expression (e.g., {@code "dto.getName()"})
      */
-    private String resolveGetter(VariableElement dtoField, TypeElement dtoElement) {
+    private String resolveGetter(FilterField filterField, VariableElement dtoField, TypeElement dtoElement) {
+        String override = filterField.getter();
+        if (!override.isEmpty()) {
+            return "dto." + override + "()";
+        }
         String fieldName = dtoField.getSimpleName().toString();
         String capitalized = Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
         String getGetter = "get" + capitalized;

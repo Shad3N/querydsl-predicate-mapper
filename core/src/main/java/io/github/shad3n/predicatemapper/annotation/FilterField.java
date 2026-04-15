@@ -17,4 +17,14 @@ public @interface FilterField {
     String path();
 
     Op op();
+
+    /**
+     * Overrides the getter method name used in generated code.
+     * <p>
+     * If set, the processor uses {@code dto.<getter>()} directly instead of inferring
+     * from the field name. Useful for non-standard accessor names.
+     * <p>
+     * Example: {@code getter = "fetchPrice"} → {@code dto.fetchPrice()}
+     */
+    String getter() default "";
 }
