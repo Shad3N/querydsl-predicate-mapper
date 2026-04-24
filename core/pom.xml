@@ -11,7 +11,7 @@
     </parent>
 
     <artifactId>querydsl-predicate-mapper</artifactId>
-    <name>QueryDSL Predicate Mapper Core</name>
+    <name>QueryDSL Predicate Mapper</name>
     <description>APT-based type-safe QueryDSL predicate generation</description>
 
     <dependencies>

@@ -39,11 +39,12 @@
     <modules>
         <module>core</module>
         <module>examples</module>
+        <module>tests-retention</module>
         <module>tests</module>
     </modules>
 
     <properties>
-        <revision>0.0.1</revision>
+        <revision>0.0.2</revision>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
