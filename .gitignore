@@ -4,7 +4,7 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 .kotlin
-
+.env
 .settings.xml
 settings.xml
 etc/settings.xml

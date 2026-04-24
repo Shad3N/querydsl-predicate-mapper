@@ -15,12 +15,6 @@
     <name>QueryDSL Predicate Mapper Examples</name>
     <description>Example usage scenarios - not published</description>
 
-    <properties>
-        <maven.deploy.skip>true</maven.deploy.skip>
-        <maven.install.skip>true</maven.install.skip>
-        <maven.javadoc.skip>true</maven.javadoc.skip>
-    </properties>
-
     <modules>
         <module>shared</module>
         <module>jpa-application</module>
