@@ -12,6 +12,6 @@ import java.lang.annotation.Target;
  * keeping Q-class references private to the service module.
  */
 @Target(ElementType.TYPE)
-@Retention(RetentionPolicy.SOURCE)
+@Retention(RetentionPolicy.CLASS)
 public @interface PredicateMapper {
 }

@@ -79,6 +79,13 @@
         <dependency>
             <groupId>io.github.shad3n</groupId>
             <artifactId>querydsl-predicate-mapper</artifactId>
+        </dependency>
+
+        <!-- Retention testing module -->
+        <dependency>
+            <groupId>io.github.shad3n</groupId>
+            <artifactId>querydsl-predicate-mapper-tests-retention</artifactId>
+            <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

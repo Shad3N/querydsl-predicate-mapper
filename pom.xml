@@ -39,6 +39,7 @@
     <modules>
         <module>core</module>
         <module>examples</module>
+        <module>tests-retention</module>
         <module>tests</module>
     </modules>
 

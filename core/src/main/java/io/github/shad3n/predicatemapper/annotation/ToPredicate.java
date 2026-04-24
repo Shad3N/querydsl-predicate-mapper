@@ -14,7 +14,7 @@ import java.lang.annotation.Target;
  * whose fields carry {@link FilterField} annotations.
  */
 @Target(ElementType.METHOD)
-@Retention(RetentionPolicy.SOURCE)
+@Retention(RetentionPolicy.CLASS)
 public @interface ToPredicate {
     /**
      * The QueryDSL Q-class to build predicates against.
