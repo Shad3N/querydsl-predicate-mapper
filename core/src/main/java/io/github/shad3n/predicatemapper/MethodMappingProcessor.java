@@ -178,61 +178,125 @@ class MethodMappingProcessor {
     }
 
     /**
-     * Processes a single field mapping by resolving its Q-class path and checking type compatibility.
+     * Collects the {@code @FilterField} fields the DTO declares or inherits, superclass fields first.
      *
-     * @param dtoField      the DTO field element
-     * @param dtoElement    the DTO type element
-     * @param qClassElement the QueryDSL Q-class type element
-     * @return the resolved field mapping, or null if validation fails
+     * @param dtoElement the DTO type element
+     * @return the annotated fields, in declaration order within each class
      */
-    private FieldMapping processSingleFieldMapping(VariableElement dtoField, TypeElement dtoElement,
-                                                   TypeElement qClassElement) {
-        FilterField filterField = dtoField.getAnnotation(FilterField.class);
-        String path = filterField.path();
-        Op operation = filterField.op();
-
-        VariableElement qClassField =
-                pathResolver.resolvePath(qClassElement, path, dtoElement, dtoField.getSimpleName().toString());
-        if (qClassField == null || !typeChecker.check(qClassField, dtoField, path, dtoElement, operation)) {
-            return null;
+    private List<VariableElement> annotatedFields(TypeElement dtoElement) {
+        List<TypeElement> hierarchy = new ArrayList<>();
+        for (TypeElement type = dtoElement; type != null; type = superclassOf(type)) {
+            hierarchy.add(0, type);
         }
+        return hierarchy.stream()
+                        .flatMap(type -> type.getEnclosedElements().stream())
+                        .filter(e -> e.getKind() == ElementKind.FIELD)
+                        .map(VariableElement.class::cast)
+                        .filter(e -> e.getAnnotation(FilterField.class) != null)
+                        .toList();
+    }
 
-        return new FieldMapping(dtoField.getSimpleName().toString(), path, operation,
-                                resolveGetter(filterField, dtoField, dtoElement));
+    private static TypeElement superclassOf(TypeElement type) {
+        TypeMirror superclass = type.getSuperclass();
+        return superclass.getKind() == TypeKind.DECLARED ? MoreTypes.asTypeElement(superclass) : null;
     }
 
     /**
-     * Resolves the getter expression for a DTO field.
-     * Uses {@code FilterField.getter()} override if set; otherwise tries {@code get*} then {@code is*}.
+     * Processes a single field mapping by checking its operator, resolving its path and checking type
+     * compatibility.
+     *
+     * @param method        the mapper method, for error reporting
+     * @param dtoField      the DTO field element
+     * @param dtoElement    the DTO type element
+     * @param targetElement the target type element
+     * @param backend       the backend resolving paths and checking types
+     * @return the resolved field mapping, or null if validation fails
+     */
+    private FieldMapping processSingleFieldMapping(ExecutableElement method, VariableElement dtoField,
+                                                   TypeElement dtoElement, TypeElement targetElement,
+                                                   PredicateBackend backend) {
+        FilterField filterField = dtoField.getAnnotation(FilterField.class);
+        String path = filterField.path();
+        Op operation = filterField.op();
+        String dtoFieldName = dtoField.getSimpleName().toString();
+
+        Optional<String> rejection = backend.rejectOperator(operation);
+        if (rejection.isPresent()) {
+            String annotationName = backend.methodAnnotation().getSimpleName();
+            processingEnv.getMessager().printMessage(
+                    Diagnostic.Kind.ERROR,
+                    ProcessorErrorMessageFactory.buildUnsupportedOperatorMessage(
+                            annotationName, method.getSimpleName().toString(), operation.name(), dtoFieldName,
+                            dtoElement.getQualifiedName().toString(), rejection.get()),
+                    method,
+                    MoreElements.getAnnotationMirror(method, backend.methodAnnotation()).orNull());
+            return null;
+        }
+
+        if (filterField.ignoreCase() && !CASE_AWARE_OPERATORS.contains(operation)) {
+            error(ProcessorErrorMessageFactory.buildIgnoreCaseOperatorMessage(path, dtoFieldName, operation.name()),
+                  dtoElement);
+            return null;
+        }
+
+        ResolvedPath target = backend.resolvePath(targetElement, path, dtoField, dtoElement);
+        if (target == null
+                || !backend.isCompatible(target, path, dtoField, dtoElement, operation, filterField.ignoreCase())) {
+            return null;
+        }
+
+        String getterName = resolveGetter(filterField, dtoField, dtoElement);
+        Optional<TypeMirror> getterType = noArgumentMethod(dtoElement, getterName).map(ExecutableElement::getReturnType);
+        if (!NULL_CHECK_OPERATORS.contains(operation)
+                && getterType.isPresent() && getterType.get().getKind().isPrimitive()) {
+            error(ProcessorErrorMessageFactory.buildPrimitiveFilterValueMessage(path, dtoFieldName, getterName,
+                                                                                getterType.get().toString()),
+                  dtoElement);
+            return null;
+        }
+
+        return new FieldMapping(dtoFieldName, operation, filterField.ignoreCase(), getterName, target);
+    }
+
+    /**
+     * Resolves the name of the method reading a DTO field.
+     * Uses {@code FilterField.getter()} override if set; otherwise the record accessor on records, and
+     * {@code get*} then {@code is*} on other classes.
      *
      * @param filterField the annotation on the DTO field
      * @param dtoField    the DTO field element
      * @param dtoElement  the DTO type element
-     * @return the getter expression (e.g., {@code "dto.getName()"})
+     * @return the getter name (e.g., {@code "getName"})
      */
     private String resolveGetter(FilterField filterField, VariableElement dtoField, TypeElement dtoElement) {
         String override = filterField.getter();
         if (!override.isEmpty()) {
-            return "dto." + override + "()";
+            return override;
         }
         String fieldName = dtoField.getSimpleName().toString();
+        if (dtoElement.getKind() == ElementKind.RECORD) {
+            return fieldName;
+        }
         String capitalized = Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
         String getGetter = "get" + capitalized;
         String isGetter = "is" + capitalized;
 
-        boolean hasGetGetter = processingEnv.getElementUtils().getAllMembers(dtoElement).stream()
-                                            .anyMatch(e -> e.getKind() == ElementKind.METHOD
-                                                    && e.getSimpleName().contentEquals(getGetter)
-                                                    && ((ExecutableElement) e).getParameters().isEmpty());
-        if (hasGetGetter) {
-            return "dto." + getGetter + "()";
+        if (hasNoArgumentMethod(dtoElement, getGetter)) {
+            return getGetter;
         }
+        return hasNoArgumentMethod(dtoElement, isGetter) ? isGetter : getGetter;
+    }
 
-        boolean hasIsGetter = processingEnv.getElementUtils().getAllMembers(dtoElement).stream()
-                                           .anyMatch(e -> e.getKind() == ElementKind.METHOD
-                                                   && e.getSimpleName().contentEquals(isGetter)
-                                                   && ((ExecutableElement) e).getParameters().isEmpty());
-        return "dto." + (hasIsGetter ? isGetter : getGetter) + "()";
+    private boolean hasNoArgumentMethod(TypeElement type, String name) {
+        return noArgumentMethod(type, name).isPresent();
+    }
+
+    private Optional<ExecutableElement> noArgumentMethod(TypeElement type, String name) {
+        return processingEnv.getElementUtils().getAllMembers(type).stream()
+                            .filter(e -> e.getKind() == ElementKind.METHOD && e.getSimpleName().contentEquals(name))
+                            .map(ExecutableElement.class::cast)
+                            .filter(m -> m.getParameters().isEmpty())
+                            .findFirst();
     }
 
     /**
