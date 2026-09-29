@@ -35,7 +35,7 @@ public abstract class AbstractOperatorCodegenTest extends AbstractProcessorTest 
         // Assert structural correctness
         assertThat(generatedSource)
                 .hasMethod("filter")
-                .hasIfStatementCount("filter", 1)
+                .hasIfStatementCount("filter", 2)
                 .hasNullCheck("filter", fieldName)
                 .hasOperatorUsage("filter", qPath, expectedMethod);
     }

@@ -5,7 +5,8 @@ import com.palantir.javapoet.*;
 import io.github.shad3n.predicatemapper.annotation.FilterField;
 import io.github.shad3n.predicatemapper.annotation.Op;
 import io.github.shad3n.predicatemapper.annotation.PredicateMapper;
-import io.github.shad3n.predicatemapper.annotation.ToPredicate;
+import io.github.shad3n.predicatemapper.annotation.ToJavaPredicateMapper;
+import io.github.shad3n.predicatemapper.annotation.ToQueryDslPredicateMapper;
 
 import javax.lang.model.element.Modifier;
 import javax.tools.JavaFileObject;

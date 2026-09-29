@@ -80,7 +80,7 @@ class EqOperatorCodegenOutputTest extends AbstractOperatorCodegenTest {
 
         assertThat(generatedSource)
                 .hasMethod("filter")
-                .hasIfStatementCount("filter", 3)
+                .hasIfStatementCount("filter", 4)
                 .hasNullCheck("filter", "name")
                 .hasNullCheck("filter", "stock")
                 .hasNullCheck("filter", "active")
@@ -135,7 +135,7 @@ class EqOperatorCodegenOutputTest extends AbstractOperatorCodegenTest {
 
         assertThat(generatedSource)
                 .hasMethod("filter")
-                .hasIfStatementCount("filter", 1)
+                .hasIfStatementCount("filter", 2)
                 .hasNullCheck("filter", "categoryName")
                 .methodContainsStatement("filter", "category.name");
     }
@@ -160,7 +160,7 @@ class EqOperatorCodegenOutputTest extends AbstractOperatorCodegenTest {
 
         assertThat(generatedSource)
                 .hasMethod("filter")
-                .hasIfStatementCount("filter", 1)
+                .hasIfStatementCount("filter", 2)
                 .hasNullCheck("filter", "categoryActive")
                 .methodContainsStatement("filter", "category.active");
     }
@@ -187,7 +187,7 @@ class EqOperatorCodegenOutputTest extends AbstractOperatorCodegenTest {
 
         assertThat(generatedSource)
                 .hasMethod("filter")
-                .hasIfStatementCount("filter", 3)
+                .hasIfStatementCount("filter", 4)
                 .hasOperatorUsage("filter", "name", "eq")
                 .methodContainsStatement("filter", "category.active")
                 .hasOperatorUsage("filter", "stock", "eq");

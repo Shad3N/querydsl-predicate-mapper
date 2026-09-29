@@ -52,7 +52,7 @@ class QClassPathResolver {
                 TypeMirror ft = found.asType();
                 if (ft.getKind() != TypeKind.DECLARED) {
                     processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                                                             ProcessorErrorMessageFactory.buildQClassPathSegmentNotTraversableMessage(
+                                                             ProcessorErrorMessageFactory.buildPathSegmentNotTraversableMessage(
                                                                      path, seg),
                                                              dtoType);
                     return null;

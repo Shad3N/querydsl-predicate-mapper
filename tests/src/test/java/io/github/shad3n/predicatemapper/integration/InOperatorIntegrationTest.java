@@ -69,4 +69,24 @@ public class InOperatorIntegrationTest {
         // QueryDSL in(emptyList) evaluates to false, so it should return empty
         assertThat(users).isEmpty();
     }
+
+    @Test
+    void testInOperator_onlyNullElementsMatchNothing() {
+        UserFilter filter = new UserFilter();
+        filter.setAgeIn(Collections.singletonList(null));
+
+        List<User> users = (List<User>) userRepository.findAll(userPredicateMapper.filter(filter));
+
+        assertThat(users).isEmpty();
+    }
+
+    @Test
+    void testInOperator_nullElementsAreDroppedAndOthersStillMatch() {
+        UserFilter filter = new UserFilter();
+        filter.setAgeIn(Arrays.asList(null, 30));
+
+        List<User> users = (List<User>) userRepository.findAll(userPredicateMapper.filter(filter));
+
+        assertThat(users).extracting(User::getUsername).containsExactly("bob");
+    }
 }

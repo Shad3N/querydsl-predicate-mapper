@@ -4,9 +4,9 @@ import com.google.auto.common.AnnotationMirrors;
 import com.google.auto.common.MoreElements;
 import com.google.auto.common.MoreTypes;
 import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.TypeName;
 import io.github.shad3n.predicatemapper.annotation.FilterField;
 import io.github.shad3n.predicatemapper.annotation.Op;
-import io.github.shad3n.predicatemapper.annotation.ToPredicate;
 
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.*;
@@ -14,66 +14,78 @@ import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 
 /**
- * Validates and processes a single method mapping.
+ * Validates and processes a single mapper method against the backend its annotation selects.
  */
 class MethodMappingProcessor {
 
-    private final ProcessingEnvironment processingEnv;
-    private final QClassPathResolver pathResolver;
-    private final TypeCompatibilityChecker typeChecker;
+    private static final Set<Op> CASE_AWARE_OPERATORS = EnumSet.of(Op.EQ, Op.NOT_EQ, Op.LIKE, Op.CONTAINS, Op.REGEX);
 
-    public MethodMappingProcessor(ProcessingEnvironment processingEnv, QClassPathResolver pathResolver,
-                                  TypeCompatibilityChecker typeChecker) {
+    private static final Set<Op> NULL_CHECK_OPERATORS = EnumSet.of(Op.IS_NULL, Op.IS_NOT_NULL);
+
+    private final ProcessingEnvironment processingEnv;
+
+    public MethodMappingProcessor(ProcessingEnvironment processingEnv) {
         this.processingEnv = processingEnv;
-        this.pathResolver = pathResolver;
-        this.typeChecker = typeChecker;
     }
 
     /**
-     * Processes a single method mapping, verifying parameters and resolving Q-classes.
+     * Processes a single method mapping, verifying its parameter, target class, return type and fields.
      *
-     * @param method the method element to process
+     * @param method  the method element to process
+     * @param backend the backend selected by the method's annotation
      * @return an optional containing the resolved mapping, or empty if validation fails
+     * @throws DeferRoundException if the target class is not yet available (unresolved type)
      */
-    public java.util.Optional<MethodMapping> process(ExecutableElement method) {
-        TypeElement dtoElement = extractDtoElement(method);
+    public Optional<MethodMapping> process(ExecutableElement method, PredicateBackend backend) {
+        String annotationName = backend.methodAnnotation().getSimpleName();
+
+        TypeElement dtoElement = extractDtoElement(method, annotationName);
         if (dtoElement == null) {
-            return java.util.Optional.empty();
+            return Optional.empty();
         }
 
-        TypeElement qClassElement = extractQClassElement(method);
-        if (qClassElement == null) {
-            return java.util.Optional.empty();
+        TypeElement targetElement = extractTargetElement(method, backend);
+        if (targetElement == null) {
+            return Optional.empty();
         }
 
-        List<FieldMapping> fieldMappings = collectMappings(dtoElement, qClassElement);
+        ClassName target = ClassName.get(targetElement);
+        if (!hasExpectedReturnType(method, backend.returnType(target), annotationName)) {
+            return Optional.empty();
+        }
+
+        List<FieldMapping> fieldMappings = collectMappings(method, dtoElement, targetElement, backend);
         if (fieldMappings == null) {
-            return java.util.Optional.empty();
+            return Optional.empty();
         }
 
-        return java.util.Optional.of(new MethodMapping(method.getSimpleName().toString(), ClassName.get(qClassElement),
-                                                       ClassName.get(dtoElement), fieldMappings));
+        return Optional.of(new MethodMapping(method.getSimpleName().toString(), backend, target,
+                                             ClassName.get(dtoElement), fieldMappings));
     }
 
     /**
      * Extracts and validates the DTO parameter element from the method.
      *
-     * @param method the method element
+     * @param method         the method element
+     * @param annotationName the simple name of the method's mapper annotation, for error messages
      * @return the DTO type element, or null if invalid
      */
-    private TypeElement extractDtoElement(ExecutableElement method) {
+    private TypeElement extractDtoElement(ExecutableElement method, String annotationName) {
         List<? extends VariableElement> parameters = method.getParameters();
         if (parameters.size() != 1) {
-            error(ProcessorErrorMessageFactory.buildToPredicateOneParamMessage(), method);
+            error(ProcessorErrorMessageFactory.buildMapperOneParamMessage(annotationName), method);
             return null;
         }
 
         TypeMirror dtoClassMirror = parameters.get(0).asType();
         if (dtoClassMirror.getKind() != TypeKind.DECLARED) {
-            error(ProcessorErrorMessageFactory.buildToPredicateParamClassMessage(), method);
+            error(ProcessorErrorMessageFactory.buildMapperParamClassMessage(annotationName), method);
             return null;
         }
 
@@ -81,34 +93,37 @@ class MethodMappingProcessor {
     }
 
     /**
-     * Extracts and validates the QueryDSL Q-class element from the method's annotation.
+     * Extracts and validates the target class element named by the method's mapper annotation.
      *
-     * @param method the method element
-     * @return the Q-class type element, or null if it is a real error (not a deferral)
-     * @throws DeferRoundException if the Q-class is not yet available (unresolved type)
+     * @param method  the method element
+     * @param backend the backend whose annotation names the target
+     * @return the target type element, or null if it is a real error (not a deferral)
+     * @throws DeferRoundException if the target class is not yet available (unresolved type)
      */
-    private TypeElement extractQClassElement(ExecutableElement method) {
-        TypeMirror qClassMirror = getQClassMirror(method);
-        if (qClassMirror == null) {
+    private TypeElement extractTargetElement(ExecutableElement method, PredicateBackend backend) {
+        TypeMirror targetMirror = getTargetMirror(method, backend);
+        if (targetMirror == null) {
             throw new DeferRoundException();
         }
-        if (qClassMirror.getKind() != TypeKind.DECLARED) {
-            error(ProcessorErrorMessageFactory.buildCannotResolveQClassMessage(), method);
+        if (targetMirror.getKind() != TypeKind.DECLARED) {
+            error(ProcessorErrorMessageFactory.buildCannotResolveTargetClassMessage(
+                    backend.methodAnnotation().getSimpleName()), method);
             return null;
         }
-        return MoreTypes.asTypeElement(qClassMirror);
+        return MoreTypes.asTypeElement(targetMirror);
     }
 
     /**
-     * Retrieves the Q-class TypeMirror from the @io.github.shad3n.annotation.ToPredicate annotation.
+     * Retrieves the target class TypeMirror from the method's mapper annotation.
      *
-     * @param method the method element
+     * @param method  the method element
+     * @param backend the backend whose annotation names the target
      * @return the type mirror, or null if invalid or unresolved
      */
-    private TypeMirror getQClassMirror(ExecutableElement method) {
-        java.util.Optional<AnnotationMirror> annotationMirror =
-                MoreElements.getAnnotationMirror(method, ToPredicate.class).toJavaUtil();
-        if (!annotationMirror.isPresent()) {
+    private TypeMirror getTargetMirror(ExecutableElement method, PredicateBackend backend) {
+        Optional<AnnotationMirror> annotationMirror =
+                MoreElements.getAnnotationMirror(method, backend.methodAnnotation()).toJavaUtil();
+        if (annotationMirror.isEmpty()) {
             return null;
         }
         AnnotationValue annotationValue = AnnotationMirrors.getAnnotationValue(annotationMirror.get(), "value");
@@ -121,30 +136,39 @@ class MethodMappingProcessor {
         } else if ("<error>".equals(value)) {
             return null;
         } else {
-            error(ProcessorErrorMessageFactory.buildCannotReadToPredicateValueMessage(method.getSimpleName().toString(),
-                                                                                      value.getClass().getSimpleName(),
-                                                                                      String.valueOf(value)), method);
+            error(ProcessorErrorMessageFactory.buildCannotReadMapperValueMessage(
+                    backend.methodAnnotation().getSimpleName(), method.getSimpleName().toString(),
+                    value.getClass().getSimpleName(), String.valueOf(value)), method);
             return null;
         }
     }
 
+    private boolean hasExpectedReturnType(ExecutableElement method, TypeName expected, String annotationName) {
+        TypeName actual = TypeName.get(method.getReturnType());
+        if (actual.equals(expected)) {
+            return true;
+        }
+        error(ProcessorErrorMessageFactory.buildWrongReturnTypeMessage(annotationName,
+                                                                       method.getSimpleName().toString(),
+                                                                       expected.toString(), actual.toString()),
+              method);
+        return false;
+    }
+
     /**
-     * Collects all field mappings for a specific DTO against a Q-class.
+     * Collects all field mappings for a specific DTO against the method's target.
      *
+     * @param method        the mapper method, for error reporting
      * @param dtoElement    the DTO type element
-     * @param qClassElement the QueryDSL Q-class type element
+     * @param targetElement the target type element
+     * @param backend       the backend resolving paths and checking types
      * @return a list of field mappings, or null if any validation error occurred
      */
-    private List<FieldMapping> collectMappings(TypeElement dtoElement, TypeElement qClassElement) {
-        List<VariableElement> annotatedFields = dtoElement.getEnclosedElements().stream()
-                                                          .filter(e -> e.getKind() == ElementKind.FIELD)
-                                                          .map(e -> (VariableElement) e)
-                                                          .filter(e -> e.getAnnotation(FilterField.class) != null)
-                                                          .toList();
-
+    private List<FieldMapping> collectMappings(ExecutableElement method, TypeElement dtoElement,
+                                               TypeElement targetElement, PredicateBackend backend) {
         List<FieldMapping> mappings = new ArrayList<>();
-        for (VariableElement dtoField : annotatedFields) {
-            FieldMapping mapping = processSingleFieldMapping(dtoField, dtoElement, qClassElement);
+        for (VariableElement dtoField : annotatedFields(dtoElement)) {
+            FieldMapping mapping = processSingleFieldMapping(method, dtoField, dtoElement, targetElement, backend);
             if (mapping == null) {
                 return null;
             }

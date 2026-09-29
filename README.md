@@ -91,7 +91,7 @@ and the APT validates that every `@FilterField` path actually exists on the Q-cl
 │                                │    │                                        │
 │  UserFilter filter = new...    │    │  @PredicateMapper                      │
 │  filter.setName("john");       │    │  interface UserQueries {               │
-│  filter.setStatuses(...);      │    │    @ToPredicate(QUser.class)           │
+│  filter.setStatuses(...);      │    │ @ToQueryDslPredicateMapper(QUser.class)│
 │                                │    │    Predicate filter(UserFilter f);     │
 │  // HTTP: /users?name=john...  │    │  }                                     │
 │  client.searchUsers(filter);   │    │                                        │
@@ -106,7 +106,7 @@ The shared library contains:
 
 - Filter DTOs with `@FilterField` annotations
 - `Op` enum for operators
-- `@PredicateMapper` and `@ToPredicate` annotations
+- `@PredicateMapper`, `@ToQueryDslPredicateMapper` and `@ToJavaPredicateMapper` annotations
 
 **Q-classes stay private** to the receiver service — they never leak into the shared library.
 
@@ -186,7 +186,7 @@ exactly which query parameters are available and what types they accept.
 <dependency>
     <groupId>io.github.shad3n</groupId>
     <artifactId>querydsl-predicate-mapper</artifactId>
-    <version>0.0.1</version>
+    <version>0.1.0</version>
 </dependency>
 ```
 
@@ -223,7 +223,7 @@ public class UserFilter {
 @PredicateMapper
 public interface UserQueries {
     
-    @ToPredicate(QUser.class)
+    @ToQueryDslPredicateMapper(QUser.class)
     Predicate filter(UserFilter filter);
 }
 ```
@@ -274,7 +274,7 @@ public class UserQueriesImpl implements UserQueries {
         BooleanBuilder builder = new BooleanBuilder();
         
         if (dto.getName() != null) {
-            builder.and(q.name.like(dto.getName()));
+            builder.and(q.name.like(dto.getName(), '!'));
         }
         if (dto.getEmail() != null) {
             builder.and(q.email.eq(dto.getEmail()));
