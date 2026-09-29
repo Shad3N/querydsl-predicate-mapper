@@ -472,6 +472,64 @@ repository.findAll(userPredicate, securityPredicate, notDeletedPredicate);
 
 ---
 
+## Java Predicates
+
+The same filter DTOs can filter plain Java objects in memory. Annotate the method with `@ToJavaPredicateMapper`, naming
+the class to test, and return `java.util.function.Predicate` of that class:
+
+```java
+public record ImageFilters(
+        @FilterField(path = "name", op = Op.REGEX, ignoreCase = true) String nameRegex,
+        @FilterField(path = "osDistro", op = Op.EQ, ignoreCase = true) String osDistro,
+        @FilterField(path = "custom", op = Op.EQ) Boolean custom) {}
+
+@PredicateMapper
+public interface ImagePredicates {
+
+    @ToJavaPredicateMapper(ImageSummary.class)
+    Predicate<ImageSummary> matcher(ImageFilters filters);
+}
+
+List<ImageSummary> matching = images.stream().filter(imagePredicates.matcher(filters)).toList();
+```
+
+- **No QueryDSL needed** - generated code references JDK types only; no Q-class is involved.
+- **Paths follow accessors** - each segment resolves to a public no-argument `segment()`, `getSegment()` or
+  `isSegment()`, so records and bean-style classes both work. Records also work as filter DTOs.
+- **Null safety** - follows SQL, so results match QueryDSL on JPA: a null DTO matches everything; a null value
+  satisfies only `IS_NULL`, so `NOT_EQ` skips it; a null object along a nested path fails every operator, `IS_NULL`
+  included, as a JPA inner join drops the row.
+- **Comparison** - `EQ`, `NOT_EQ`, `LTE`, `GTE` and `IN` compare as SQL does: `Comparable` values with `compareTo`,
+  so `BigDecimal` `1.0` equals `1.00`; `Double` and `Float` by numeric value, so `0.0` equals `-0.0`; and
+  `OffsetDateTime` or `ZonedDateTime` values by instant, so the same instant is equal whatever its offset or zone.
+  `IN` needs a collection whose element type is the path's type, and null elements match nothing.
+- **Boxing** - a `Boolean` filter field compares against a primitive `boolean` accessor, and likewise for other
+  primitives. `IS_NULL` and `IS_NOT_NULL` on a primitive path fail compilation.
+- **Case** - `ignoreCase` folds case one character at a time across Unicode, not only ASCII; `ß` does not match `SS`.
+- **`LIKE`** - `%` matches any run of characters, `_` any single character, `!` makes the next character literal, and
+  every other character matches itself, as with QueryDSL on JPA.
+- **`CONTAINS`** - the filter value is found anywhere in the value as plain text; an empty filter value matches every
+  non-null value.
+- **`REGEX`** - the pattern is found anywhere in the value (`Matcher.find()`), compiled once per predicate. An
+  invalid pattern throws `IllegalArgumentException` naming the DTO field when the predicate is built, and a match
+  running past 1 second throws `IllegalStateException`, so a pattern that backtracks without bound cannot block the
+  thread.
+
+One `@PredicateMapper` interface may mix `@ToQueryDslPredicateMapper` and `@ToJavaPredicateMapper` methods.
+
+---
+
+## Upgrading from 0.0.x
+
+`@ToPredicate` was removed. Replace it with `@ToQueryDslPredicateMapper`, keeping the same Q-class argument:
+
+```java
+@ToQueryDslPredicateMapper(QUser.class)   // was: @ToPredicate(QUser.class)
+Predicate filter(UserFilter filter);
+```
+
+---
+
 ## Why This Approach?
 
 ### vs. Manual Predicate Building

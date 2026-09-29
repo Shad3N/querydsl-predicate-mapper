@@ -127,14 +127,35 @@ public final class TestSourceFactory {
                                             .addAnnotation(PredicateMapper.class);
         }
 
+        public MapperBuilder javaMethod(String methodName, ClassName targetClass, ClassName dtoClass) {
+            return annotatedMethod(methodName, ToJavaPredicateMapper.class, targetClass,
+                                   ParameterizedTypeName.get(ClassName.get(java.util.function.Predicate.class),
+                                                             targetClass),
+                                   dtoClass);
+        }
+
+        public MapperBuilder annotatedMethod(String methodName, Class<? extends java.lang.annotation.Annotation> annotation,
+                                             ClassName targetClass, TypeName returnType, ClassName dtoClass) {
+            MethodSpec method = MethodSpec.methodBuilder(methodName)
+                                          .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+                                          .addAnnotation(AnnotationSpec.builder(annotation)
+                                                                       .addMember("value", "$T.class", targetClass)
+                                                                       .build())
+                                          .returns(returnType)
+                                          .addParameter(dtoClass, "dto")
+                                          .build();
+            interfaceBuilder.addMethod(method);
+            return this;
+        }
+
         public MapperBuilder method(String methodName, ClassName qClass, ClassName dtoClass) {
-            AnnotationSpec toPredicate = AnnotationSpec.builder(ToPredicate.class)
+            AnnotationSpec toQueryDslPredicateMapper = AnnotationSpec.builder(ToQueryDslPredicateMapper.class)
                                                        .addMember("value", "$T.class", qClass)
                                                        .build();
 
             MethodSpec method = MethodSpec.methodBuilder(methodName)
                                           .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-                                          .addAnnotation(toPredicate)
+                                          .addAnnotation(toQueryDslPredicateMapper)
                                           .returns(ClassName.get("com.querydsl.core.types", "Predicate"))
                                           .addParameter(dtoClass, "dto")
                                           .build();
