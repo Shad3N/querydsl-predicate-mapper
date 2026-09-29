@@ -62,10 +62,17 @@ public final class TestSourceFactory {
         }
 
         public DtoBuilder field(String name, TypeName type, String path, Op op) {
-            AnnotationSpec filterField = AnnotationSpec.builder(FilterField.class)
-                                                       .addMember("path", "$S", path)
-                                                       .addMember("op", "$T.$L", Op.class, op.name())
-                                                       .build();
+            return field(name, type, path, op, false);
+        }
+
+        public DtoBuilder field(String name, TypeName type, String path, Op op, boolean ignoreCase) {
+            AnnotationSpec.Builder filterFieldBuilder = AnnotationSpec.builder(FilterField.class)
+                                                                      .addMember("path", "$S", path)
+                                                                      .addMember("op", "$T.$L", Op.class, op.name());
+            if (ignoreCase) {
+                filterFieldBuilder.addMember("ignoreCase", "true");
+            }
+            AnnotationSpec filterField = filterFieldBuilder.build();
 
             FieldSpec field = FieldSpec.builder(type, name)
                                        .addModifiers(Modifier.PRIVATE)
@@ -91,6 +98,10 @@ public final class TestSourceFactory {
 
         public DtoBuilder field(String name, Class<?> type, String path, Op op) {
             return field(name, TypeName.get(type), path, op);
+        }
+
+        public DtoBuilder field(String name, Class<?> type, String path, Op op, boolean ignoreCase) {
+            return field(name, TypeName.get(type), path, op, ignoreCase);
         }
 
         public JavaFileObject build() {

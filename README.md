@@ -170,7 +170,9 @@ exactly which query parameters are available and what types they accept.
 - **Compile-time validation** - Q-class paths verified during compilation
 - **Type-safe query declarations** - Interfaces as query contracts
 - **Zero runtime reflection** - Generated code is plain, readable Java
-- **Multiple operators** - `EQ`, `NOT_EQ`, `LTE`, `GTE`, `LIKE`, `IN`, `IS_NULL`, `IS_NOT_NULL`
+- **Multiple operators** - `EQ`, `NOT_EQ`, `LTE`, `GTE`, `LIKE`, `CONTAINS`, `IN`, `IS_NULL`, `IS_NOT_NULL`,
+  `REGEX`, plus `ignoreCase` for text
+- **Two backends** - QueryDSL predicates for queries, or plain `java.util.function.Predicate` for in-memory objects
 - **Nested path support** - Traverse Q-class relationships: `"category.name"`, `"address.city"`
 - **Swagger/OpenAPI friendly** - Filter DTOs serve as documented query parameter contracts
 - **Spring integration** - Generated implementations are `@Component` beans
@@ -304,16 +306,28 @@ public class UserQueriesImpl implements UserQueries {
 
 ## Operators
 
-| Operator | Q-Class Method | Description |
-|----------|----------------|-------------|
-| `EQ` | `eq()` | Equality |
-| `NOT_EQ` | `ne()` | Inequality |
-| `LTE` | `loe()` | Less or equal |
-| `GTE` | `goe()` | Greater or equal |
-| `LIKE` | `like()` | SQL LIKE pattern |
-| `IN` | `in()` | Value in collection |
-| `IS_NULL` | `isNull()` | Null check (Boolean flag) |
-| `IS_NOT_NULL` | `isNotNull()` | Not null check (Boolean flag) |
+| Operator | Q-Class Method | With `ignoreCase = true` | Description |
+|----------|----------------|--------------------------|-------------|
+| `EQ` | `eq()` | `equalsIgnoreCase()` | Equality |
+| `NOT_EQ` | `ne()` | `notEqualsIgnoreCase()` | Inequality |
+| `LTE` | `loe()` | — | Less or equal |
+| `GTE` | `goe()` | — | Greater or equal |
+| `LIKE` | `like(value, '!')` | `likeIgnoreCase(value, '!')` | SQL LIKE pattern; `!` escapes the next character |
+| `CONTAINS` | `contains()` | `containsIgnoreCase()` | Literal substring; `%` and `_` match themselves |
+| `IN` | `in()` | — | Value in collection; null elements match nothing |
+| `IS_NULL` | `isNull()` | — | Null check (Boolean flag) |
+| `IS_NOT_NULL` | `isNotNull()` | — | Not null check (Boolean flag) |
+| `REGEX` | not supported | Java predicates only | Regular expression found anywhere; Java predicates only |
+
+`ignoreCase` on any other operator, or on a path that is not a `String`, fails compilation.
+
+`LIKE` patterns use `!` as the escape character: `!%`, `!_` and `!!` match a literal `%`, `_` and `!`. Generated code
+passes it explicitly, so the rule holds whichever QueryDSL templates render the query, and for Java predicates too.
+
+`REGEX` fails compilation on `@ToQueryDslPredicateMapper` methods. QueryDSL's JPA templates rewrite `matches()` into
+`LIKE`: a pattern such as `"22"` turns into a full-value match, `"^ali"` or `"a[a-z]+"` throws at query time, and a
+`(?i)` prefix is taken as literal text. A filter DTO may still declare `REGEX` fields; only mapping them to QueryDSL is
+rejected.
 
 ---
 

@@ -26,15 +26,32 @@ class TypeCompatibilityChecker {
     /**
      * Checks if the type of DTO field is compatible with the target QueryDSL type.
      *
-     * @param qField   the resolved QueryDSL field element
-     * @param dtoField the DTO field element
-     * @param path     the declared path for error messaging
-     * @param dtoType  the parent DTO type for error anchoring
-     * @param op       the operator to use for the field
+     * @param qType      the type of the resolved QueryDSL field
+     * @param dtoField   the DTO field element
+     * @param path       the declared path for error messaging
+     * @param dtoType    the parent DTO type for error anchoring
+     * @param op         the operator to use for the field
+     * @param ignoreCase whether text is compared ignoring case, which needs a StringPath
      * @return true if compatible or unknown, false if clearly incompatible
      */
-    public boolean check(VariableElement qField, VariableElement dtoField, String path, TypeElement dtoType, Op op) {
-        TypeMirror qType = qField.asType();
+    public boolean check(TypeMirror qType, VariableElement dtoField, String path, TypeElement dtoType, Op op,
+                         boolean ignoreCase) {
+        if (ignoreCase && !isStringPath(qType)) {
+            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                                                     ProcessorErrorMessageFactory.buildIgnoreCaseTypeMessage(
+                                                             path, dtoField.getSimpleName().toString(),
+                                                             qType.toString()),
+                                                     dtoType);
+            return false;
+        }
+        if (op == Op.CONTAINS && !isStringPath(qType)) {
+            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                                                     ProcessorErrorMessageFactory.buildTextOperatorTypeMessage(
+                                                             path, dtoField.getSimpleName().toString(), op.name(),
+                                                             qType.toString()),
+                                                     dtoType);
+            return false;
+        }
         if (qType.getKind() != TypeKind.DECLARED) {
             return true;
         }
@@ -117,6 +134,12 @@ class TypeCompatibilityChecker {
         return processingEnv.getTypeUtils().isSubtype(
                 processingEnv.getTypeUtils().erasure(type),
                 processingEnv.getTypeUtils().erasure(collectionType));
+    }
+
+    private boolean isStringPath(TypeMirror qType) {
+        return qType.getKind() == TypeKind.DECLARED
+                && MoreTypes.asTypeElement(qType).getQualifiedName()
+                            .contentEquals("com.querydsl.core.types.dsl.StringPath");
     }
 
     /**
