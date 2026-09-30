@@ -41,7 +41,7 @@ interface PredicateBackend {
     Optional<String> rejectOperator(Op op);
 
     /**
-     * Resolves a dot-separated path against the target.
+     * Resolves a dot-separated path against the target, ending at the type of the value the path reaches.
      *
      * @param target   the target class element
      * @param path     the path declared by {@code @FilterField}
@@ -50,20 +50,6 @@ interface PredicateBackend {
      * @return the resolved path, or null when the path is invalid
      */
     ResolvedPath resolvePath(TypeElement target, String path, VariableElement dtoField, TypeElement dtoType);
-
-    /**
-     * Checks that the DTO field's type fits the resolved path under the given operator.
-     *
-     * @param target     the resolved path
-     * @param path       the path declared by {@code @FilterField}, for error reporting
-     * @param dtoField   the DTO field
-     * @param dtoType    the DTO type, for error reporting
-     * @param op         the operator
-     * @param ignoreCase whether text is compared ignoring case
-     * @return true when compatible
-     */
-    boolean isCompatible(ResolvedPath target, String path, VariableElement dtoField, TypeElement dtoType, Op op,
-                         boolean ignoreCase);
 
     /**
      * Generates the implementations of the given methods and any helpers they share.

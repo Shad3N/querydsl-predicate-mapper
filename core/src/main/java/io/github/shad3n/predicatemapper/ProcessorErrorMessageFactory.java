@@ -22,7 +22,9 @@ final class ProcessorErrorMessageFactory {
     private static final String Q_CLASS_PATH_INVALID =
             "Q-class path '%s' invalid: field '%s' not found in %s (referenced by @FilterField on '%s' in %s)";
     private static final String ACCESSOR_PATH_INVALID =
-            "Path '%s' invalid: no public accessor '%s()', 'get%s()' or 'is%s()' in %s (referenced by @FilterField on '%s' in %s)";
+            "Path '%s' invalid: no public accessor %s in %s (referenced by @FilterField on '%s' in %s)";
+    private static final String DTO_ACCESSOR_MISSING =
+            "@FilterField on '%s' in %s: no public accessor %s reads the field";
     private static final String PATH_SEGMENT_NOT_TRAVERSABLE =
             "Path '%s': segment '%s' is not a traversable declared type";
     private static final String TYPE_MISMATCH =
@@ -96,10 +98,13 @@ final class ProcessorErrorMessageFactory {
         return String.format(Q_CLASS_PATH_INVALID, path, field, qClass, dtoField, dtoClass);
     }
 
-    public static String buildAccessorPathInvalidMessage(String path, String segment, String capitalizedSegment,
-                                                         String targetClass, String dtoField, String dtoClass) {
-        return String.format(ACCESSOR_PATH_INVALID, path, segment, capitalizedSegment, capitalizedSegment,
-                             targetClass, dtoField, dtoClass);
+    public static String buildAccessorPathInvalidMessage(String path, String accessors, String targetClass,
+                                                         String dtoField, String dtoClass) {
+        return String.format(ACCESSOR_PATH_INVALID, path, accessors, targetClass, dtoField, dtoClass);
+    }
+
+    public static String buildMissingDtoAccessorMessage(String dtoField, String dtoClass, String accessors) {
+        return String.format(DTO_ACCESSOR_MISSING, dtoField, dtoClass, accessors);
     }
 
     public static String buildPathSegmentNotTraversableMessage(String path, String segment) {

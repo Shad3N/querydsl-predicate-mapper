@@ -8,7 +8,7 @@ import java.util.List;
  *
  * @param members member names followed from the target, one per path segment: Q-class fields for
  *                QueryDSL mappers, accessor methods for Java predicate mappers
- * @param endType type of the last member
+ * @param endType type of the value the path reaches
  */
 record ResolvedPath(List<String> members, TypeMirror endType) {
 }

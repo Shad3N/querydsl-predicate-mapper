@@ -42,11 +42,11 @@ class JavaPredicateBackend implements PredicateBackend {
             CodeBlock.of("$T.CASE_INSENSITIVE | $T.UNICODE_CASE", Pattern.class, Pattern.class);
 
     private final AccessorPathResolver pathResolver;
-    private final JavaTypeCompatibilityChecker typeChecker;
+    private final ComparisonTypes comparisonTypes;
 
     public JavaPredicateBackend(ProcessingEnvironment processingEnv) {
         this.pathResolver = new AccessorPathResolver(processingEnv);
-        this.typeChecker = new JavaTypeCompatibilityChecker(processingEnv);
+        this.comparisonTypes = new ComparisonTypes(processingEnv);
     }
 
     @Override
@@ -66,13 +66,7 @@ class JavaPredicateBackend implements PredicateBackend {
 
     @Override
     public ResolvedPath resolvePath(TypeElement target, String path, VariableElement dtoField, TypeElement dtoType) {
-        return pathResolver.resolvePath(target, path, dtoType, dtoField.getSimpleName().toString());
-    }
-
-    @Override
-    public boolean isCompatible(ResolvedPath target, String path, VariableElement dtoField, TypeElement dtoType, Op op,
-                                boolean ignoreCase) {
-        return typeChecker.check(target, path, dtoField, dtoType, op, ignoreCase);
+        return pathResolver.resolvePath(target, path, dtoField, dtoType);
     }
 
     @Override
@@ -247,13 +241,13 @@ class JavaPredicateBackend implements PredicateBackend {
         if (field.ignoreCase()) {
             return Comparison.IGNORING_CASE;
         }
-        if (typeChecker.isInstantBased(endType)) {
+        if (comparisonTypes.isInstantBased(endType)) {
             return Comparison.SAME_INSTANT;
         }
-        if (typeChecker.isFloatingPoint(endType)) {
+        if (comparisonTypes.isFloatingPoint(endType)) {
             return Comparison.FLOATING_POINT;
         }
-        return typeChecker.comparableErasure(endType).isPresent() ? Comparison.COMPARE_TO : Comparison.EQUALS;
+        return comparisonTypes.comparableErasure(endType).isPresent() ? Comparison.COMPARE_TO : Comparison.EQUALS;
     }
 
     /**
@@ -266,7 +260,7 @@ class JavaPredicateBackend implements PredicateBackend {
         }
         String candidate = names.newName("candidate");
         TypeName elementType =
-                TypeName.get(typeChecker.comparableErasure(fieldCode.mapping().target().endType()).orElseThrow());
+                TypeName.get(comparisonTypes.comparableErasure(fieldCode.mapping().target().endType()).orElseThrow());
         CodeBlock typedCandidate = CodeBlock.of("(($T) $N)", elementType, candidate);
         return CodeBlock.of("$N.stream().anyMatch($N -> $N != null && $L)", fieldCode.filterValue(), candidate,
                             candidate, fieldCode.comparison().test(Op.EQ, typedCandidate, value));

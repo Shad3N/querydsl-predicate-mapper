@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import javax.tools.JavaFileObject;
 import java.util.List;
@@ -380,7 +381,7 @@ class JavaPredicateBackendProcessorTest extends AbstractProcessorTest {
             var queryDslDto = TestSourceFactory.dto("test.dto", "Filter")
                                                .field("minStock", com.palantir.javapoet.TypeName.INT, "stock", Op.GTE);
             var mapper = TestSourceFactory.mapper("test.mapper", "FilterMapper").method("query", Q_TEST_PRODUCT, FILTER);
-            assertError(compile(queryDslDto.build(), mapper.build()), "DTO field is int");
+            assertError(compile(queryDslDto.build(), mapper.build()), "returns the primitive int");
         }
 
         @Test
@@ -429,10 +430,41 @@ class JavaPredicateBackendProcessorTest extends AbstractProcessorTest {
         }
 
         @Test
+        @DisplayName("QueryDSL IN needs a collection of the path type")
+        void queryDslInWithWrongElementType() {
+            var dto = TestSourceFactory.dto("test.dto", "Filter")
+                                       .field("names", ParameterizedTypeName.get(ClassName.get(List.class),
+                                                                                 ClassName.get(Integer.class)),
+                                              "name", Op.IN);
+            var mapper = TestSourceFactory.mapper("test.mapper", "FilterMapper").method("query", Q_TEST_PRODUCT, FILTER);
+
+            assertError(compile(dto.build(), mapper.build()),
+                        "path maps to java.util.Collection<java.lang.String> but DTO field is java.util.List<java.lang.Integer>");
+        }
+
+        @Test
+        @DisplayName("QueryDSL IN with a raw collection fails")
+        void queryDslInWithRawCollection() {
+            var dto = TestSourceFactory.dto("test.dto", "Filter").field("names", List.class, "name", Op.IN);
+            var mapper = TestSourceFactory.mapper("test.mapper", "FilterMapper").method("query", Q_TEST_PRODUCT, FILTER);
+
+            assertError(compile(dto.build(), mapper.build()), "Type mismatch");
+        }
+
+        @Test
+        @DisplayName("QueryDSL LTE with a value of another type fails")
+        void queryDslRangeWithWrongType() {
+            var dto = TestSourceFactory.dto("test.dto", "Filter").field("maxStock", Long.class, "stock", Op.LTE);
+            var mapper = TestSourceFactory.mapper("test.mapper", "FilterMapper").method("query", Q_TEST_PRODUCT, FILTER);
+
+            assertError(compile(dto.build(), mapper.build()), "Type mismatch");
+        }
+
+        @Test
         @DisplayName("CONTAINS on a non-String path fails on both backends")
         void containsOnNonStringPath() {
             var dto = TestSourceFactory.dto("test.dto", "Filter").field("size", Integer.class, "size", Op.CONTAINS);
-            assertError(compileJavaMapper(IMAGE, dto), "path maps to java.lang.String but DTO field is");
+            assertError(compileJavaMapper(IMAGE, dto), "CONTAINS needs a String path");
 
             var queryDslDto = TestSourceFactory.dto("test.dto", "Filter")
                                                .field("stock", Integer.class, "stock", Op.CONTAINS);
@@ -475,6 +507,52 @@ class JavaPredicateBackendProcessorTest extends AbstractProcessorTest {
             var dto = TestSourceFactory.dto("test.dto", "Filter").field("missing", String.class, "missing", Op.EQ);
 
             assertError(compileJavaMapper(IMAGE, dto), "no public accessor 'missing()'");
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"class", "hashCode"})
+        @DisplayName("Methods declared on Object are not accessors")
+        void objectMethodIsNotAccessor(String path) {
+            var dto = TestSourceFactory.dto("test.dto", "Filter").field("value", Boolean.class, path, Op.IS_NULL);
+
+            assertError(compileJavaMapper(IMAGE, dto), "no public accessor '" + path + "()'");
+        }
+
+        @Test
+        @DisplayName("DTO field without an accessor fails")
+        void dtoFieldWithoutAccessor() {
+            JavaFileObject filter = JavaFileObjects.forSourceString("test.dto.Filter", """
+                    package test.dto;
+                    import io.github.shad3n.predicatemapper.annotation.FilterField;
+                    import io.github.shad3n.predicatemapper.annotation.Op;
+                    public class Filter {
+                        @FilterField(path = "name", op = Op.EQ)
+                        private String name;
+                        String getName() { return name; }
+                    }
+                    """);
+            var mapper = TestSourceFactory.mapper("test.mapper", "FilterMapper").javaMethod("matcher", IMAGE, FILTER);
+
+            assertError(compile(IMAGE_SOURCE, filter, mapper.build()),
+                        "no public accessor 'name()', 'getName()' or 'isName()' reads the field");
+        }
+
+        @Test
+        @DisplayName("DTO getter override naming no accessor fails")
+        void dtoGetterOverrideWithoutAccessor() {
+            JavaFileObject filter = JavaFileObjects.forSourceString("test.dto.Filter", """
+                    package test.dto;
+                    import io.github.shad3n.predicatemapper.annotation.FilterField;
+                    import io.github.shad3n.predicatemapper.annotation.Op;
+                    public class Filter {
+                        @FilterField(path = "name", op = Op.EQ, getter = "fetchName")
+                        private String name;
+                        public String getName() { return name; }
+                    }
+                    """);
+            var mapper = TestSourceFactory.mapper("test.mapper", "FilterMapper").javaMethod("matcher", IMAGE, FILTER);
+
+            assertError(compile(IMAGE_SOURCE, filter, mapper.build()), "no public accessor 'fetchName()'");
         }
 
         @Test

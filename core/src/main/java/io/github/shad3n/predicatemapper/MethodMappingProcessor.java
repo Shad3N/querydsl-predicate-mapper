@@ -14,24 +14,22 @@ import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
 /**
  * Validates and processes a single mapper method against the backend its annotation selects.
  */
 class MethodMappingProcessor {
 
-    private static final Set<Op> CASE_AWARE_OPERATORS = EnumSet.of(Op.EQ, Op.NOT_EQ, Op.LIKE, Op.CONTAINS, Op.REGEX);
-
-    private static final Set<Op> NULL_CHECK_OPERATORS = EnumSet.of(Op.IS_NULL, Op.IS_NOT_NULL);
-
     private final ProcessingEnvironment processingEnv;
+    private final AccessorLookup accessors;
+    private final OperatorRules operatorRules;
 
     public MethodMappingProcessor(ProcessingEnvironment processingEnv) {
         this.processingEnv = processingEnv;
+        this.accessors = new AccessorLookup(processingEnv);
+        this.operatorRules = new OperatorRules(processingEnv);
     }
 
     /**
@@ -161,7 +159,7 @@ class MethodMappingProcessor {
      * @param method        the mapper method, for error reporting
      * @param dtoElement    the DTO type element
      * @param targetElement the target type element
-     * @param backend       the backend resolving paths and checking types
+     * @param backend       the backend resolving paths
      * @return a list of field mappings, or null if any validation error occurred
      */
     private List<FieldMapping> collectMappings(ExecutableElement method, TypeElement dtoElement,
@@ -202,14 +200,14 @@ class MethodMappingProcessor {
     }
 
     /**
-     * Processes a single field mapping by checking its operator, resolving its path and checking type
-     * compatibility.
+     * Processes a single field mapping by checking the backend supports its operator, resolving its path and DTO
+     * accessor, and checking both types against the operator.
      *
      * @param method        the mapper method, for error reporting
      * @param dtoField      the DTO field element
      * @param dtoElement    the DTO type element
      * @param targetElement the target type element
-     * @param backend       the backend resolving paths and checking types
+     * @param backend       the backend resolving the path
      * @return the resolved field mapping, or null if validation fails
      */
     private FieldMapping processSingleFieldMapping(ExecutableElement method, VariableElement dtoField,
@@ -233,25 +231,25 @@ class MethodMappingProcessor {
             return null;
         }
 
-        if (filterField.ignoreCase() && !CASE_AWARE_OPERATORS.contains(operation)) {
-            error(ProcessorErrorMessageFactory.buildIgnoreCaseOperatorMessage(path, dtoFieldName, operation.name()),
-                  dtoElement);
-            return null;
-        }
-
         ResolvedPath target = backend.resolvePath(targetElement, path, dtoField, dtoElement);
-        if (target == null
-                || !backend.isCompatible(target, path, dtoField, dtoElement, operation, filterField.ignoreCase())) {
+        if (target == null) {
             return null;
         }
 
-        String getterName = resolveGetter(filterField, dtoField, dtoElement);
-        Optional<TypeMirror> getterType = noArgumentMethod(dtoElement, getterName).map(ExecutableElement::getReturnType);
-        if (!NULL_CHECK_OPERATORS.contains(operation)
-                && getterType.isPresent() && getterType.get().getKind().isPrimitive()) {
-            error(ProcessorErrorMessageFactory.buildPrimitiveFilterValueMessage(path, dtoFieldName, getterName,
-                                                                                getterType.get().toString()),
-                  dtoElement);
+        Optional<ExecutableElement> getter = dtoAccessor(filterField, dtoFieldName, dtoElement);
+        if (getter.isEmpty()) {
+            String candidates = filterField.getter().isEmpty()
+                    ? AccessorLookup.describePropertyAccessors(dtoFieldName)
+                    : "'" + filterField.getter() + "()'";
+            error(ProcessorErrorMessageFactory.buildMissingDtoAccessorMessage(
+                    dtoFieldName, dtoElement.getQualifiedName().toString(), candidates), dtoField);
+            return null;
+        }
+        String getterName = getter.get().getSimpleName().toString();
+        TypeMirror getterType = MoreTypes.asExecutable(
+                processingEnv.getTypeUtils().asMemberOf(MoreTypes.asDeclared(dtoElement.asType()), getter.get()))
+                                         .getReturnType();
+        if (!operatorRules.check(dtoField, target.endType(), getterName, getterType)) {
             return null;
         }
 
@@ -259,44 +257,20 @@ class MethodMappingProcessor {
     }
 
     /**
-     * Resolves the name of the method reading a DTO field.
-     * Uses {@code FilterField.getter()} override if set; otherwise the record accessor on records, and
-     * {@code get*} then {@code is*} on other classes.
+     * Finds the accessor reading a DTO field: the {@code FilterField.getter()} override if set, otherwise the
+     * accessor {@link AccessorLookup#forProperty} finds for the field's name.
      *
-     * @param filterField the annotation on the DTO field
-     * @param dtoField    the DTO field element
-     * @param dtoElement  the DTO type element
-     * @return the getter name (e.g., {@code "getName"})
+     * @param filterField  the annotation on the DTO field
+     * @param dtoFieldName the DTO field's name
+     * @param dtoElement   the DTO type element
+     * @return the accessor, or empty when the DTO has none
      */
-    private String resolveGetter(FilterField filterField, VariableElement dtoField, TypeElement dtoElement) {
+    private Optional<ExecutableElement> dtoAccessor(FilterField filterField, String dtoFieldName,
+                                                    TypeElement dtoElement) {
         String override = filterField.getter();
-        if (!override.isEmpty()) {
-            return override;
-        }
-        String fieldName = dtoField.getSimpleName().toString();
-        if (dtoElement.getKind() == ElementKind.RECORD) {
-            return fieldName;
-        }
-        String capitalized = Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
-        String getGetter = "get" + capitalized;
-        String isGetter = "is" + capitalized;
-
-        if (hasNoArgumentMethod(dtoElement, getGetter)) {
-            return getGetter;
-        }
-        return hasNoArgumentMethod(dtoElement, isGetter) ? isGetter : getGetter;
-    }
-
-    private boolean hasNoArgumentMethod(TypeElement type, String name) {
-        return noArgumentMethod(type, name).isPresent();
-    }
-
-    private Optional<ExecutableElement> noArgumentMethod(TypeElement type, String name) {
-        return processingEnv.getElementUtils().getAllMembers(type).stream()
-                            .filter(e -> e.getKind() == ElementKind.METHOD && e.getSimpleName().contentEquals(name))
-                            .map(ExecutableElement.class::cast)
-                            .filter(m -> m.getParameters().isEmpty())
-                            .findFirst();
+        return override.isEmpty()
+                ? accessors.forProperty(dtoElement, dtoFieldName)
+                : accessors.byName(dtoElement, override);
     }
 
     /**

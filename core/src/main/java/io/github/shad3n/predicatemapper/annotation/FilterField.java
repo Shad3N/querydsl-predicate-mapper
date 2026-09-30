@@ -31,9 +31,9 @@ public @interface FilterField {
     boolean ignoreCase() default false;
 
     /**
-     * Name of the no-argument DTO method generated code reads the field's value through, such as
-     * {@code "fetchPrice"} for {@code dto.fetchPrice()}. When empty, the record accessor on records, and
-     * {@code getField()} then {@code isField()} on other classes.
+     * Name of the public no-argument DTO method generated code reads the field's value through, such as
+     * {@code "fetchPrice"} for {@code dto.fetchPrice()}. When empty, the first of {@code field()},
+     * {@code getField()} and {@code isField()} the DTO declares or inherits; none existing fails compilation.
      */
     String getter() default "";
 }

@@ -26,11 +26,9 @@ class QueryDslBackend implements PredicateBackend {
     private static final ClassName EXPRESSIONS = ClassName.get("com.querydsl.core.types.dsl", "Expressions");
 
     private final QClassPathResolver pathResolver;
-    private final TypeCompatibilityChecker typeChecker;
 
     public QueryDslBackend(ProcessingEnvironment processingEnv) {
         this.pathResolver = new QClassPathResolver(processingEnv);
-        this.typeChecker = new TypeCompatibilityChecker(processingEnv);
     }
 
     @Override
@@ -53,14 +51,7 @@ class QueryDslBackend implements PredicateBackend {
 
     @Override
     public ResolvedPath resolvePath(TypeElement target, String path, VariableElement dtoField, TypeElement dtoType) {
-        VariableElement qField = pathResolver.resolvePath(target, path, dtoType, dtoField.getSimpleName().toString());
-        return qField == null ? null : new ResolvedPath(List.of(path.split("\\.")), qField.asType());
-    }
-
-    @Override
-    public boolean isCompatible(ResolvedPath target, String path, VariableElement dtoField, TypeElement dtoType, Op op,
-                                boolean ignoreCase) {
-        return typeChecker.check(target.endType(), dtoField, path, dtoType, op, ignoreCase);
+        return pathResolver.resolvePath(target, path, dtoField, dtoType);
     }
 
     @Override

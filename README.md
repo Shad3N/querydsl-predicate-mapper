@@ -346,6 +346,16 @@ error: Q-class path 'nonExistentField' does not exist on QUser
 
 **Compilation fails fast. No silent ignores. No mysterious empty results in production.**
 
+Types are validated too, with the same rules for `@ToQueryDslPredicateMapper` and `@ToJavaPredicateMapper`:
+
+- `EQ` and `NOT_EQ` need a DTO field of the path's type; `LTE` and `GTE` also need a `Comparable` path.
+- `IN` needs a collection whose element type is the path's type; a raw collection fails.
+- `LIKE`, `CONTAINS` and `REGEX` need `String` on both sides.
+- `IS_NULL` and `IS_NOT_NULL` need a `Boolean` DTO field.
+- Every other operator needs a DTO field that is not primitive, since a primitive can never be left unset.
+- The DTO reads each field through a public `field()`, `getField()` or `isField()` accessor, or the method named by
+  `getter`.
+
 ---
 
 ## Nested Paths
@@ -502,7 +512,7 @@ List<ImageSummary> matching = images.stream().filter(imagePredicates.matcher(fil
 - **Comparison** - `EQ`, `NOT_EQ`, `LTE`, `GTE` and `IN` compare as SQL does: `Comparable` values with `compareTo`,
   so `BigDecimal` `1.0` equals `1.00`; `Double` and `Float` by numeric value, so `0.0` equals `-0.0`; and
   `OffsetDateTime` or `ZonedDateTime` values by instant, so the same instant is equal whatever its offset or zone.
-  `IN` needs a collection whose element type is the path's type, and null elements match nothing.
+  `IN` ignores null elements of the filter collection.
 - **Boxing** - a `Boolean` filter field compares against a primitive `boolean` accessor, and likewise for other
   primitives. `IS_NULL` and `IS_NOT_NULL` on a primitive path fail compilation.
 - **Case** - `ignoreCase` folds case one character at a time across Unicode, not only ASCII; `ß` does not match `SS`.
