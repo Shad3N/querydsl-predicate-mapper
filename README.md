@@ -91,7 +91,7 @@ and the APT validates that every `@FilterField` path actually exists on the Q-cl
 │                                │    │                                        │
 │  UserFilter filter = new...    │    │  @PredicateMapper                      │
 │  filter.setName("john");       │    │  interface UserQueries {               │
-│  filter.setStatuses(...);      │    │    @ToPredicate(QUser.class)           │
+│  filter.setStatuses(...);      │    │ @ToQueryDslPredicateMapper(QUser.class)│
 │                                │    │    Predicate filter(UserFilter f);     │
 │  // HTTP: /users?name=john...  │    │  }                                     │
 │  client.searchUsers(filter);   │    │                                        │
@@ -106,7 +106,7 @@ The shared library contains:
 
 - Filter DTOs with `@FilterField` annotations
 - `Op` enum for operators
-- `@PredicateMapper` and `@ToPredicate` annotations
+- `@PredicateMapper`, `@ToQueryDslPredicateMapper` and `@ToJavaPredicateMapper` annotations
 
 **Q-classes stay private** to the receiver service — they never leak into the shared library.
 
@@ -170,7 +170,9 @@ exactly which query parameters are available and what types they accept.
 - **Compile-time validation** - Q-class paths verified during compilation
 - **Type-safe query declarations** - Interfaces as query contracts
 - **Zero runtime reflection** - Generated code is plain, readable Java
-- **Multiple operators** - `EQ`, `NOT_EQ`, `LTE`, `GTE`, `LIKE`, `IN`, `IS_NULL`, `IS_NOT_NULL`
+- **Multiple operators** - `EQ`, `NOT_EQ`, `LTE`, `GTE`, `LIKE`, `CONTAINS`, `IN`, `IS_NULL`, `IS_NOT_NULL`,
+  `REGEX`, plus `ignoreCase` for text
+- **Two backends** - QueryDSL predicates for queries, or plain `java.util.function.Predicate` for in-memory objects
 - **Nested path support** - Traverse Q-class relationships: `"category.name"`, `"address.city"`
 - **Swagger/OpenAPI friendly** - Filter DTOs serve as documented query parameter contracts
 - **Spring integration** - Generated implementations are `@Component` beans
@@ -186,7 +188,7 @@ exactly which query parameters are available and what types they accept.
 <dependency>
     <groupId>io.github.shad3n</groupId>
     <artifactId>querydsl-predicate-mapper</artifactId>
-    <version>0.0.1</version>
+    <version>0.1.0</version>
 </dependency>
 ```
 
@@ -223,7 +225,7 @@ public class UserFilter {
 @PredicateMapper
 public interface UserQueries {
     
-    @ToPredicate(QUser.class)
+    @ToQueryDslPredicateMapper(QUser.class)
     Predicate filter(UserFilter filter);
 }
 ```
@@ -274,7 +276,7 @@ public class UserQueriesImpl implements UserQueries {
         BooleanBuilder builder = new BooleanBuilder();
         
         if (dto.getName() != null) {
-            builder.and(q.name.like(dto.getName()));
+            builder.and(q.name.like(dto.getName(), '!'));
         }
         if (dto.getEmail() != null) {
             builder.and(q.email.eq(dto.getEmail()));
@@ -304,16 +306,28 @@ public class UserQueriesImpl implements UserQueries {
 
 ## Operators
 
-| Operator | Q-Class Method | Description |
-|----------|----------------|-------------|
-| `EQ` | `eq()` | Equality |
-| `NOT_EQ` | `ne()` | Inequality |
-| `LTE` | `loe()` | Less or equal |
-| `GTE` | `goe()` | Greater or equal |
-| `LIKE` | `like()` | SQL LIKE pattern |
-| `IN` | `in()` | Value in collection |
-| `IS_NULL` | `isNull()` | Null check (Boolean flag) |
-| `IS_NOT_NULL` | `isNotNull()` | Not null check (Boolean flag) |
+| Operator | Q-Class Method | With `ignoreCase = true` | Description |
+|----------|----------------|--------------------------|-------------|
+| `EQ` | `eq()` | `equalsIgnoreCase()` | Equality |
+| `NOT_EQ` | `ne()` | `notEqualsIgnoreCase()` | Inequality |
+| `LTE` | `loe()` | — | Less or equal |
+| `GTE` | `goe()` | — | Greater or equal |
+| `LIKE` | `like(value, '!')` | `likeIgnoreCase(value, '!')` | SQL LIKE pattern; `!` escapes the next character |
+| `CONTAINS` | `contains()` | `containsIgnoreCase()` | Literal substring; `%` and `_` match themselves |
+| `IN` | `in()` | — | Value in collection; null elements match nothing |
+| `IS_NULL` | `isNull()` | — | Null check (Boolean flag) |
+| `IS_NOT_NULL` | `isNotNull()` | — | Not null check (Boolean flag) |
+| `REGEX` | not supported | Java predicates only | Regular expression found anywhere; Java predicates only |
+
+`ignoreCase` on any other operator, or on a path that is not a `String`, fails compilation.
+
+`LIKE` patterns use `!` as the escape character: `!%`, `!_` and `!!` match a literal `%`, `_` and `!`. Generated code
+passes it explicitly, so the rule holds whichever QueryDSL templates render the query, and for Java predicates too.
+
+`REGEX` fails compilation on `@ToQueryDslPredicateMapper` methods. QueryDSL's JPA templates rewrite `matches()` into
+`LIKE`: a pattern such as `"22"` turns into a full-value match, `"^ali"` or `"a[a-z]+"` throws at query time, and a
+`(?i)` prefix is taken as literal text. A filter DTO may still declare `REGEX` fields; only mapping them to QueryDSL is
+rejected.
 
 ---
 
@@ -331,6 +345,16 @@ error: Q-class path 'nonExistentField' does not exist on QUser
 ```
 
 **Compilation fails fast. No silent ignores. No mysterious empty results in production.**
+
+Types are validated too, with the same rules for `@ToQueryDslPredicateMapper` and `@ToJavaPredicateMapper`:
+
+- `EQ` and `NOT_EQ` need a DTO field of the path's type; `LTE` and `GTE` also need a `Comparable` path.
+- `IN` needs a collection whose element type is the path's type; a raw collection fails.
+- `LIKE`, `CONTAINS` and `REGEX` need `String` on both sides.
+- `IS_NULL` and `IS_NOT_NULL` need a `Boolean` DTO field.
+- Every other operator needs a DTO field that is not primitive, since a primitive can never be left unset.
+- The DTO reads each field through a public `field()`, `getField()` or `isField()` accessor, or the method named by
+  `getter`.
 
 ---
 
@@ -454,6 +478,64 @@ public interface UserRepository extends JpaRepository<User, UUID>, QuerydslPredi
 
 // Usage - pass multiple predicates directly
 repository.findAll(userPredicate, securityPredicate, notDeletedPredicate);
+```
+
+---
+
+## Java Predicates
+
+The same filter DTOs can filter plain Java objects in memory. Annotate the method with `@ToJavaPredicateMapper`, naming
+the class to test, and return `java.util.function.Predicate` of that class:
+
+```java
+public record ImageFilters(
+        @FilterField(path = "name", op = Op.REGEX, ignoreCase = true) String nameRegex,
+        @FilterField(path = "osDistro", op = Op.EQ, ignoreCase = true) String osDistro,
+        @FilterField(path = "custom", op = Op.EQ) Boolean custom) {}
+
+@PredicateMapper
+public interface ImagePredicates {
+
+    @ToJavaPredicateMapper(ImageSummary.class)
+    Predicate<ImageSummary> matcher(ImageFilters filters);
+}
+
+List<ImageSummary> matching = images.stream().filter(imagePredicates.matcher(filters)).toList();
+```
+
+- **No QueryDSL needed** - generated code references JDK types only; no Q-class is involved.
+- **Paths follow accessors** - each segment resolves to a public no-argument `segment()`, `getSegment()` or
+  `isSegment()`, so records and bean-style classes both work. Records also work as filter DTOs.
+- **Null safety** - follows SQL, so results match QueryDSL on JPA: a null DTO matches everything; a null value
+  satisfies only `IS_NULL`, so `NOT_EQ` skips it; a null object along a nested path fails every operator, `IS_NULL`
+  included, as a JPA inner join drops the row.
+- **Comparison** - `EQ`, `NOT_EQ`, `LTE`, `GTE` and `IN` compare as SQL does: `Comparable` values with `compareTo`,
+  so `BigDecimal` `1.0` equals `1.00`; `Double` and `Float` by numeric value, so `0.0` equals `-0.0`; and
+  `OffsetDateTime` or `ZonedDateTime` values by instant, so the same instant is equal whatever its offset or zone.
+  `IN` ignores null elements of the filter collection.
+- **Boxing** - a `Boolean` filter field compares against a primitive `boolean` accessor, and likewise for other
+  primitives. `IS_NULL` and `IS_NOT_NULL` on a primitive path fail compilation.
+- **Case** - `ignoreCase` folds case one character at a time across Unicode, not only ASCII; `ß` does not match `SS`.
+- **`LIKE`** - `%` matches any run of characters, `_` any single character, `!` makes the next character literal, and
+  every other character matches itself, as with QueryDSL on JPA.
+- **`CONTAINS`** - the filter value is found anywhere in the value as plain text; an empty filter value matches every
+  non-null value.
+- **`REGEX`** - the pattern is found anywhere in the value (`Matcher.find()`), compiled once per predicate. An
+  invalid pattern throws `IllegalArgumentException` naming the DTO field when the predicate is built, and a match
+  running past 1 second throws `IllegalStateException`, so a pattern that backtracks without bound cannot block the
+  thread.
+
+One `@PredicateMapper` interface may mix `@ToQueryDslPredicateMapper` and `@ToJavaPredicateMapper` methods.
+
+---
+
+## Upgrading from 0.0.x
+
+`@ToPredicate` was removed. Replace it with `@ToQueryDslPredicateMapper`, keeping the same Q-class argument:
+
+```java
+@ToQueryDslPredicateMapper(QUser.class)   // was: @ToPredicate(QUser.class)
+Predicate filter(UserFilter filter);
 ```
 
 ---

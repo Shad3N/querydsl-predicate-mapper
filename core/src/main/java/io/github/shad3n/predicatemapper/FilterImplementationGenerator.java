@@ -2,18 +2,19 @@ package io.github.shad3n.predicatemapper;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.JavaFile;
-import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeSpec;
-import io.github.shad3n.predicatemapper.annotation.Op;
 
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
- * Generates QueryDSL predicate implementations from {@code @io.github.shad3n.annotation.PredicateMapper} interfaces.
+ * Generates the implementation class of a {@code @PredicateMapper} interface, delegating each method to
+ * the backend that maps it.
  */
 class FilterImplementationGenerator {
 
@@ -40,7 +41,7 @@ class FilterImplementationGenerator {
     }
 
     /**
-     * Generates the concrete implementation of the provided {@code @io.github.shad3n.annotation.PredicateMapper} interface.
+     * Generates the concrete implementation of the provided {@code @PredicateMapper} interface.
      *
      * @param iface   the interface element for which to generate the implementation
      * @param methods the list of method mappings detailing the predicate generation logic
@@ -52,13 +53,9 @@ class FilterImplementationGenerator {
 
         TypeSpec.Builder classBuilder = createClassBuilder(ifaceName, implName);
 
-        ClassName predicateName = ClassName.get("com.querydsl.core.types", "Predicate");
-        ClassName booleanBuilderName = ClassName.get("com.querydsl.core", "BooleanBuilder");
-        ClassName expressionsName = ClassName.get("com.querydsl.core.types.dsl", "Expressions");
-
-        for (MethodMapping m : methods) {
-            classBuilder.addMethod(generateMethod(m, predicateName, booleanBuilderName, expressionsName));
-        }
+        methods.stream()
+               .collect(Collectors.groupingBy(MethodMapping::backend, LinkedHashMap::new, Collectors.toList()))
+               .forEach((backend, backendMethods) -> classBuilder.addMethods(backend.implement(backendMethods)));
 
         JavaFile javaFile = JavaFile.builder(ifaceName.packageName(), classBuilder.build())
                                     .indent("    ")
@@ -87,75 +84,5 @@ class FilterImplementationGenerator {
         }
 
         return builder;
-    }
-
-    /**
-     * Generates a concrete method spec based on the method mapping, configuring the boolean builder
-     * and sequentially appending field-specific logic.
-     *
-     * @param m                  the method mapping containing the signature and field settings
-     * @param predicateName      the class name representing the QueryDSL Predicate
-     * @param booleanBuilderName the class name representing the QueryDSL BooleanBuilder
-     * @param expressionsName    the class name representing the QueryDSL Expressions
-     * @return the ready-to-build method specification
-     */
-    private MethodSpec generateMethod(MethodMapping m, ClassName predicateName, ClassName booleanBuilderName,
-                                      ClassName expressionsName) {
-        MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(m.methodName())
-                                                     .addAnnotation(Override.class)
-                                                     .addModifiers(Modifier.PUBLIC)
-                                                     .returns(predicateName)
-                                                     .addParameter(m.dtoClass(), "dto");
-
-        String qClassName = m.qClass().simpleName();
-        String variableName = qClassName.startsWith("Q") && qClassName.length() > 1 ?
-                Character.toLowerCase(qClassName.charAt(1)) + qClassName.substring(2) : "entity";
-        methodBuilder.addStatement("$T q = new $T($S)", m.qClass(), m.qClass(), variableName);
-        methodBuilder.addStatement("$T builder = new $T()", booleanBuilderName, booleanBuilderName);
-
-        for (FieldMapping f : m.fields()) {
-            generateFieldCondition(methodBuilder, f);
-        }
-
-        methodBuilder.addStatement("$T result = builder.getValue()", predicateName);
-        methodBuilder.addStatement("return result != null ? result : $T.TRUE", expressionsName);
-
-        return methodBuilder.build();
-    }
-
-    /**
-     * Appends to a method builder the specific QueryDSL expressions testing a field's value.
-     * Evaluates checking for null values versus equality, range comparisons, or like matching.
-     *
-     * @param methodBuilder the builder corresponding to the generated method
-     * @param fieldMapping  the field mapping that describes the operation and target path
-     */
-    private void generateFieldCondition(MethodSpec.Builder methodBuilder, FieldMapping fieldMapping) {
-        String getter = fieldMapping.getter();
-        String qPath = "q." + fieldMapping.path();
-
-        if (fieldMapping.op() == Op.IS_NULL) {
-            methodBuilder.beginControlFlow("if ($T.TRUE.equals($L))", Boolean.class, getter)
-                         .addStatement("builder.and($L.isNull())", qPath)
-                         .endControlFlow();
-        } else if (fieldMapping.op() == Op.IS_NOT_NULL) {
-            methodBuilder.beginControlFlow("if ($T.TRUE.equals($L))", Boolean.class, getter)
-                         .addStatement("builder.and($L.isNotNull())", qPath)
-                         .endControlFlow();
-        } else {
-            String expr = switch (fieldMapping.op()) {
-                case EQ -> qPath + ".eq(" + getter + ")";
-                case NOT_EQ -> qPath + ".ne(" + getter + ")";
-                case LTE -> qPath + ".loe(" + getter + ")";
-                case GTE -> qPath + ".goe(" + getter + ")";
-                case LIKE -> qPath + ".like(" + getter + ")";
-                case IN -> qPath + ".in(" + getter + ")";
-                case IS_NULL, IS_NOT_NULL -> throw new IllegalStateException(
-                        "IS_NULL/IS_NOT_NULL must be handled before this switch: " + fieldMapping.op());
-            };
-            methodBuilder.beginControlFlow("if ($L != null)", getter)
-                         .addStatement("builder.and($L)", expr)
-                         .endControlFlow();
-        }
     }
 }

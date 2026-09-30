@@ -138,4 +138,11 @@ public class OperatorIntegrationTest {
         assertThat(users).hasSize(2);
         assertThat(users).extracting(User::getUsername).containsExactlyInAnyOrder("alice", "charlie");
     }
+
+    @Test
+    void testNullFilterMatchesEveryone() {
+        List<User> users = (List<User>) userRepository.findAll(userPredicateMapper.filter(null));
+
+        assertThat(users).hasSize(4);
+    }
 }

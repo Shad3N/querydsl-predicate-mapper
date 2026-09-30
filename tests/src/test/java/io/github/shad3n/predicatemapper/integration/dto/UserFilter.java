@@ -34,4 +34,19 @@ public class UserFilter {
 
     @FilterField(path = "email", op = Op.IS_NOT_NULL)
     private Boolean emailIsNotNull;
+
+    @FilterField(path = "username", op = Op.EQ, ignoreCase = true)
+    private String usernameIgnoringCase;
+
+    @FilterField(path = "username", op = Op.NOT_EQ, ignoreCase = true)
+    private String notUsernameIgnoringCase;
+
+    @FilterField(path = "username", op = Op.LIKE, ignoreCase = true)
+    private String usernameLikeIgnoringCase;
+
+    @FilterField(path = "username", op = Op.CONTAINS)
+    private String usernameContains;
+
+    @FilterField(path = "username", op = Op.CONTAINS, ignoreCase = true)
+    private String usernameContainsIgnoringCase;
 }

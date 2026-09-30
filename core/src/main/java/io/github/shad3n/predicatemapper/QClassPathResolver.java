@@ -6,72 +6,59 @@ import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
-import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
-import javax.tools.Diagnostic;
+import javax.lang.model.util.Elements;
+import javax.lang.model.util.Types;
+import java.util.Optional;
 
 /**
  * Resolves properties against a QueryDSL Q-Class hierarchy.
  */
 class QClassPathResolver {
 
-    private final ProcessingEnvironment processingEnv;
+    private static final String QUERYDSL_EXPRESSION = "com.querydsl.core.types.Expression";
+
+    private final PathWalker walker;
+    private final Elements elements;
+    private final Types types;
 
     public QClassPathResolver(ProcessingEnvironment processingEnv) {
-        this.processingEnv = processingEnv;
+        this.walker = new PathWalker(processingEnv);
+        this.elements = processingEnv.getElementUtils();
+        this.types = processingEnv.getTypeUtils();
     }
 
     /**
-     * Resolves a dot-separated path string against a QueryDSL Q-class hierarchy.
+     * Resolves each segment of a dot-separated path to the Q-class field of that name, ending at the type of the
+     * value the last field's QueryDSL expression yields.
      *
-     * @param qClass       the base QueryDSL Q-class element
-     * @param path         the dot-separated field path (e.g., "owner.name")
-     * @param dtoType      the DTO type element (used for error reporting)
-     * @param dtoFieldName the DTO field name (used for error reporting)
-     * @return the variable element representing the ultimate field, or null if invalid
+     * @param qClass   the base QueryDSL Q-class element
+     * @param path     the dot-separated field path (e.g., "owner.name")
+     * @param dtoField the DTO field declaring the path, for error reporting
+     * @param dtoType  the DTO type, for error reporting
+     * @return the field names and the value type, or null if invalid
      */
-    public VariableElement resolvePath(TypeElement qClass, String path, TypeElement dtoType, String dtoFieldName) {
-        String[] segments = path.split("\\.");
-        TypeElement current = qClass;
-        VariableElement found = null;
-
-        for (int i = 0; i < segments.length; i++) {
-            String seg = segments[i];
-            found = findFieldInHierarchy(current, seg);
-            if (found == null) {
-                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                                                         ProcessorErrorMessageFactory.buildQClassPathInvalidMessage(
-                                                                 path, seg,
-                                                                 current.getQualifiedName().toString(),
-                                                                 dtoFieldName,
-                                                                 dtoType.getQualifiedName().toString()),
-                                                         dtoType);
-                return null;
-            }
-            if (i < segments.length - 1) {
-                TypeMirror ft = found.asType();
-                if (ft.getKind() != TypeKind.DECLARED) {
-                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                                                             ProcessorErrorMessageFactory.buildQClassPathSegmentNotTraversableMessage(
-                                                                     path, seg),
-                                                             dtoType);
-                    return null;
-                }
-                current = MoreTypes.asTypeElement(ft);
-            }
-        }
-        return found;
+    public ResolvedPath resolvePath(TypeElement qClass, String path, VariableElement dtoField, TypeElement dtoType) {
+        ResolvedPath qPath = walker.walk(
+                qClass, path, dtoField,
+                (owner, segment) -> field(MoreTypes.asTypeElement(owner), segment).map(
+                        field -> new PathWalker.Member(segment, field.asType())),
+                (segment, owner) -> ProcessorErrorMessageFactory.buildQClassPathInvalidMessage(
+                        path, segment, owner.getQualifiedName().toString(), dtoField.getSimpleName().toString(),
+                        dtoType.getQualifiedName().toString()));
+        return qPath == null ? null : new ResolvedPath(qPath.members(), valueType(qPath.endType()));
     }
 
-    /**
-     * Searches for a field by name within the given type element's mapped members.
-     */
-    private VariableElement findFieldInHierarchy(TypeElement type, String name) {
-        return processingEnv.getElementUtils().getAllMembers(type).stream()
-                            .filter(el -> el.getKind() == ElementKind.FIELD && el.getSimpleName().contentEquals(name))
-                            .map(el -> (VariableElement) el)
-                            .findFirst()
-                            .orElse(null);
+    private TypeMirror valueType(TypeMirror qType) {
+        TypeMirror expressionType = types.erasure(elements.getTypeElement(QUERYDSL_EXPRESSION).asType());
+        return SupertypeArguments.of(types, qType, expressionType).orElse(qType);
+    }
+
+    private Optional<VariableElement> field(TypeElement type, String name) {
+        return elements.getAllMembers(type).stream()
+                       .filter(member -> member.getKind() == ElementKind.FIELD
+                               && member.getSimpleName().contentEquals(name))
+                       .map(VariableElement.class::cast)
+                       .findFirst();
     }
 }
-

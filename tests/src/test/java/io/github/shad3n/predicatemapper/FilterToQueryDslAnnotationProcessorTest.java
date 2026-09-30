@@ -78,7 +78,7 @@ class FilterToQueryDslAnnotationProcessorTest extends AbstractProcessorTest {
             String generatedSource = getGeneratedSource(compilation, "test.mapper.ProductMapperImpl");
             assertThat(generatedSource)
                     .hasMethod("filter")
-                    .hasIfStatementCount("filter", 6);
+                    .hasIfStatementCount("filter", 7);
         }
     }
 

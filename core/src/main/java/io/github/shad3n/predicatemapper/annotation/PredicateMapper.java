@@ -7,9 +7,10 @@ import java.lang.annotation.Target;
 
 /**
  * Marks an interface for APT-generated predicate mapper implementation.
- * Each method on the interface should be annotated with {@link ToPredicate}.
+ * Each method on the interface should be annotated with {@link ToQueryDslPredicateMapper} or
+ * {@link ToJavaPredicateMapper}.
  * The APT generates a Spring {@code @Component} implementing the interface,
- * keeping Q-class references private to the service module.
+ * keeping Q-class and target class references private to the service module.
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.CLASS)

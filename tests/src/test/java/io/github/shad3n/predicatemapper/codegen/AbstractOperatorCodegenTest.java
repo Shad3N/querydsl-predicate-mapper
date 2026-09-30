@@ -2,6 +2,7 @@ package io.github.shad3n.predicatemapper.codegen;
 
 import com.google.testing.compile.Compilation;
 import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.TypeName;
 import io.github.shad3n.predicatemapper.annotation.Op;
 import io.github.shad3n.predicatemapper.testinfra.AbstractProcessorTest;
 import io.github.shad3n.predicatemapper.testinfra.TestSourceFactory;
@@ -14,6 +15,11 @@ public abstract class AbstractOperatorCodegenTest extends AbstractProcessorTest 
             "io.github.shad3n.predicatemapper.testinfra.entity", "QTestProduct");
 
     protected void assertSingleFieldMapping(Class<?> fieldType, String fieldName, String qPath, Op op,
+                                            String expectedMethod) throws Exception {
+        assertSingleFieldMapping(TypeName.get(fieldType), fieldName, qPath, op, expectedMethod);
+    }
+
+    protected void assertSingleFieldMapping(TypeName fieldType, String fieldName, String qPath, Op op,
                                             String expectedMethod) throws Exception {
         String filterName = capitalize(fieldName) + "Filter";
         String mapperName = capitalize(fieldName) + "Mapper";
@@ -35,7 +41,7 @@ public abstract class AbstractOperatorCodegenTest extends AbstractProcessorTest 
         // Assert structural correctness
         assertThat(generatedSource)
                 .hasMethod("filter")
-                .hasIfStatementCount("filter", 1)
+                .hasIfStatementCount("filter", 2)
                 .hasNullCheck("filter", fieldName)
                 .hasOperatorUsage("filter", qPath, expectedMethod);
     }

@@ -2,7 +2,7 @@ package io.github.shad3n.predicatemapper.examples.jpa.mapper;
 
 import com.querydsl.core.types.Predicate;
 import io.github.shad3n.predicatemapper.annotation.PredicateMapper;
-import io.github.shad3n.predicatemapper.annotation.ToPredicate;
+import io.github.shad3n.predicatemapper.annotation.ToQueryDslPredicateMapper;
 import io.github.shad3n.predicatemapper.examples.jpa.entity.QProduct;
 import io.github.shad3n.predicatemapper.examples.shared.ProductFilter;
 
@@ -15,6 +15,6 @@ import io.github.shad3n.predicatemapper.examples.shared.ProductFilter;
 @PredicateMapper
 public interface ProductPredicateMapper {
 
-    @ToPredicate(QProduct.class)
+    @ToQueryDslPredicateMapper(QProduct.class)
     Predicate filter(ProductFilter filter);
 }

@@ -20,7 +20,7 @@ import java.util.Set;
 /**
  * Main entry point for the Filter to QueryDSL Annotation Processor.
  * It processes {@code @io.github.shad3n.annotation.PredicateMapper} interfaces and generates Spring Component implementations
- * to map DTOs into QueryDSL Predicates.
+ * to map DTOs into QueryDSL Predicates or plain Java predicates.
  */
 @AutoService(Processor.class)
 @SupportedAnnotationTypes("io.github.shad3n.predicatemapper.annotation.PredicateMapper")
@@ -90,7 +90,7 @@ public class FilterToQueryDslAnnotationProcessor extends AbstractProcessor {
 
     /**
      * Checks if there are any interfaces left unprocessed at the end of the annotation processing rounds.
-     * This typically means a Q-class could not be resolved.
+     * This typically means a Q-class or target class could not be resolved.
      *
      * @param roundEnv the environment for information about the current round
      */
@@ -98,7 +98,7 @@ public class FilterToQueryDslAnnotationProcessor extends AbstractProcessor {
         if (roundEnv.processingOver() && !deferredElements.isEmpty()) {
             deferredElements.forEach(el ->
                                              processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                                                                                      ProcessorErrorMessageFactory.buildUnresolvedQClassMessage(),
+                                                                                      ProcessorErrorMessageFactory.buildUnresolvedTargetClassMessage(),
                                                                                       el)
             );
         }
